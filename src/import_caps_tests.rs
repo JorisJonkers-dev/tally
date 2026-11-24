@@ -96,3 +96,19 @@ fn a_command_listed_twice_counts_once() {
     let rows = capabilities_rows(&text, &ev(&["ext.jip_ln"])).unwrap();
     assert_eq!(rows, vec![("ext.jip_ln.getlnversion".to_string(), true)]);
 }
+
+#[test]
+fn an_empty_command_name_is_an_error() {
+    covers(&[ids::refs::importers::CAPABILITIES]);
+    let text = CAPS.replace("[\"GetLNVersion\"]", "[\"\"]");
+    let err = capabilities_rows(&text, &ev(&["ext.jip_ln"])).unwrap_err();
+    assert!(err.contains("empty name"), "{err}");
+}
+
+#[test]
+fn two_extenders_of_one_group_are_an_error() {
+    covers(&[ids::refs::importers::CAPABILITIES]);
+    let text = CAPS.replace("\"id\": \"stewie-tweaks\"", "\"id\": \"jip_ln\"");
+    let err = capabilities_rows(&text, &ev(&["ext.jip_ln"])).unwrap_err();
+    assert!(err.contains("second extender"), "{err}");
+}

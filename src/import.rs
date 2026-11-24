@@ -70,6 +70,9 @@ fn named_rows<'a>(
     let mut seen: BTreeMap<String, &str> = BTreeMap::new();
     let mut rows = Vec::new();
     for name in names {
+        if name.trim().is_empty() {
+            return Err(format!("{what} with an empty name"));
+        }
         let seg = segment(name);
         if let Some(other) = seen.insert(seg.clone(), name) {
             if other == name {
@@ -117,6 +120,11 @@ pub fn capabilities_rows(text: &str, ev: &Evidence) -> Result<Rows, String> {
         else {
             continue;
         };
+        if matched.contains(&group.as_str()) {
+            return Err(format!(
+                "extender `{id}` is the second extender of group `{group}` (an id listed twice, or two ids that give one segment)"
+            ));
+        }
         matched.push(group.as_str());
         let commands = e.get("commands");
         let names: Vec<&str> = commands

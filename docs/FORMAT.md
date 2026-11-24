@@ -143,7 +143,7 @@ partial but the file does not say so, or the other way round.
   (`extenders[].id`, `commands.implemented_names`). `groups` lists one group per extender to compare: the group whose
   last segment is the extender id as a segment (`jip-ln` is `jip_ln`). Every listed command is an implemented item
   of that group; extenders without a group are left out, and a group without an extender is an error. A command's
-  item is its name as a segment: lower case, other characters `_`, `x` in front of a leading digit, `_` after a Rust
+  item is its name as a segment: lower case, other characters `_`, `x` in front when it does not start with a letter, `_` after a Rust
   keyword (`GetLNVersion` is `getlnversion`, `Return` is `return_`). A name listed twice counts once; two different
   names that become the same item are an error, and so is an `implemented` count that differs from the list.
   The reference lists (every command of an extender) come from the extenders' own repositories through `manual` or
