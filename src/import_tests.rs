@@ -83,3 +83,11 @@ fn the_ledger_list_refuses_an_address_listed_twice() {
     let map = "address\tname\n00401000\tFoo\n401000\tBar\n";
     assert!(ledger_list(map).unwrap_err().contains("twice"));
 }
+
+#[test]
+fn a_ledger_listing_an_address_twice_is_an_error() {
+    covers(&[ids::refs::importers::LEDGER]);
+    let text = "address\tstatus\n00401000\topen\n0x401000\ttranslated\n";
+    let err = ledger_rows(text, &ev(&["engine.fns"])).unwrap_err();
+    assert!(err.contains("twice"), "{err}");
+}

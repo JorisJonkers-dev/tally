@@ -95,7 +95,7 @@ pub fn tsv_rows(text: &str, ev: &Evidence) -> Result<Rows, String> {
 /// `key_column` (default `address`). The evidence names exactly one group.
 ///
 /// # Errors
-/// When the group is not exactly one, a column is missing or an address is not hex.
+/// When the group is not exactly one, a column is missing, an address is not hex or one is listed twice.
 pub fn ledger_rows(text: &str, ev: &Evidence) -> Result<Rows, String> {
     let [group] = ev.groups.as_slice() else {
         return Err(
@@ -111,10 +111,14 @@ pub fn ledger_rows(text: &str, ev: &Evidence) -> Result<Rows, String> {
     } else {
         ev.implemented.iter().map(String::as_str).collect()
     };
+    let mut seen = std::collections::BTreeSet::new();
     t.rows
         .iter()
         .map(|r| {
             let key = ledger_key(cell(r, addr))?;
+            if !seen.insert(key.clone()) {
+                return Err(format!("address {} is listed twice", &key[1..]));
+            }
             Ok((format!("{group}.{key}"), done.contains(&cell(r, status))))
         })
         .collect()
