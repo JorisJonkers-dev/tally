@@ -66,8 +66,20 @@ pub struct Settings {
     pub areas: BTreeMap<String, String>,
     #[serde(default)]
     pub data: Vec<DataCases>,
+    /// Covers maps: TSV files that tag tests in files the repository does not edit.
+    #[serde(default)]
+    pub map: Vec<CoverMaps>,
     #[serde(default)]
     pub evidence: Vec<Evidence>,
+}
+
+/// Covers maps (`[[map]]`): each file matching `files` is a TSV of `test<TAB>covers[<TAB>table]` rows
+/// ([`crate::scan::map_rows`]).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoverMaps {
+    /// A path pattern relative to the repository root (`.fork/catalogue/covers.d/*.tsv`).
+    pub files: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -336,6 +348,22 @@ impl Catalogue {
         package_from_cargo(&self.root).unwrap_or_else(|| "crate".into())
     }
 
+    /// The cargo package a file belongs to and the file's path inside it: the nearest directory above the file,
+    /// up to the repository root, whose `Cargo.toml` has a `[package]`. A file of the root package (or of no
+    /// package) belongs to [`Catalogue::package`]. So one catalogue covers a workspace of many packages:
+    /// `crates/jip/src/lib.rs` is `("jip", "src/lib.rs")`.
+    #[must_use]
+    pub fn package_for(&self, file: &str) -> (String, String) {
+        let parts: Vec<&str> = file.split('/').collect();
+        for n in (1..parts.len()).rev() {
+            let dir = parts[..n].join("/");
+            if let Some(name) = package_from_cargo(&self.root.join(&dir)) {
+                return (name, parts[n..].join("/"));
+            }
+        }
+        (self.package(), file.to_string())
+    }
+
     /// The display name.
     #[must_use]
     pub fn name(&self) -> String {
@@ -493,9 +521,29 @@ pub fn load(root: &Path, dir: &Path) -> Result<Catalogue, String> {
         if let Some(list) = &gf.group.items_from {
             match read_list(&dir.join(list)) {
                 Ok(rows) => {
+                    let declared: BTreeMap<String, usize> = items
+                        .iter()
+                        .enumerate()
+                        .map(|(n, i)| (i.id.clone(), n))
+                        .collect();
                     for row in rows {
                         let id = format!("{}.{}", gf.group.id, row.key);
-                        if items.iter().any(|i| i.id == id) {
+                        // An [[item]] of a listed row states only what differs: it keeps the row's title (unless
+                        // it gives its own) and answers the row of the group's reference (unless it names refs).
+                        if let Some(&n) = declared.get(&id) {
+                            let it = &mut items[n];
+                            let decl = &gf.item[n];
+                            if decl.title.is_none() {
+                                it.title.clone_from(&row.title);
+                            }
+                            if decl.refs.is_empty() {
+                                it.refs = gf
+                                    .group
+                                    .reference
+                                    .iter()
+                                    .map(|s| format!("{s}:{}", row.key))
+                                    .collect();
+                            }
                             continue;
                         }
                         items.push(Item {

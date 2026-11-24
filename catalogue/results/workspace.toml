@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "results.workspace"
+title = "Workspaces of many packages"
+origin = "ours"
+
+[[item]]
+id = "package"
+title = "A test file belongs to the package of the nearest Cargo.toml above it"
+status = "implemented"
+
+[[item]]
+id = "unnamed_package"
+title = "A suite without a package never counts: it could be any package's"
+status = "implemented"

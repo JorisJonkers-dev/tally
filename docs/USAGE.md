@@ -12,12 +12,13 @@ add it to a repository, and how to work on it.
   tally's standard-library-only generator; [ADR 0001](adr/0001-typed-ids-without-a-crate.md)). Tests call
   `covers(&[ids::area::group::ITEM])`, so a wrong or removed id does not compile, and rustfmt and the IDE see
   ordinary constants.
-- **Results**: `tally ingest` reads cargo-nextest JUnit (`report-skipped = "all"`); skipped, ignored and retried
-  tests never count. An item is **covered** when a tagged test passed on Linux, Windows and macOS.
+- **Results**: `tally ingest` reads cargo-nextest JUnit (`report-skipped = "all"`) or the text output of
+  `cargo test` (`--libtest`); skipped, ignored and retried tests never count. In a workspace each test file belongs
+  to the package of the nearest `Cargo.toml` above it. An item is **covered** when a tagged test passed on Linux, Windows and macOS.
 - **Checks** (`tally check`, exit 1 on any error): ids are valid, unique and in the file their id names; the
   generator copy and its line reader agree with this tally; pins match; every reference row has an item and every
   reference names a row; implementation evidence agrees with the catalogue; tags name live ids, inside tests, with
-  full paths; no more than ten ids per test without a `covers-table:` reason; with `--base`, no id disappears
+  full paths; covers-map rows (`[[map]]`, tests in files the repository does not edit) name existing tests; no more than ten ids per test without a `covers-table:` reason; with `--base`, no id disappears
   without `retired` or an alias and a retired id stays retired; with `--ratchet`, the covered and tagged counts do
   not drop (unless `--allow-drop`). Warnings: tags in ignored tests, new implemented items without a tag.
 - **Reports**: `--depth 1` areas, `2` groups, `3` items with their tests; `term`, `md`, `json`
@@ -30,7 +31,7 @@ tally check  [--base <git rev>] [--results <file>] [--ratchet <report.json>] [--
 tally report [--depth 1|2|3] [--format term|md|json|svg] [--missing] [--origin original|ours] [--results <file>] [--out <file>]
 tally refs check
 tally refs fetch [--source <id>] [--cache <dir>] [--update]
-tally ingest --junit <file>... [--os linux|windows|macos] [--out <file>] [--append]
+tally ingest (--junit <file> | --libtest <file>)... [--os linux|windows|macos] [--out <file>] [--append]
 tally ids --out <path>          # the ids module, as build.rs writes it
 tally ids --generator <path>    # the generator copy build.rs includes
 tally doc <file> [--check]      # fill the <!-- tally:group <id> --> tables of a hand-written document

@@ -223,41 +223,212 @@ pub fn os_from_name(path: &str) -> Option<&'static str> {
     })
 }
 
-/// The test binaries a source file's tests are in.
-fn suites_for(package: &str, file: &str) -> (Vec<String>, bool) {
-    if let Some(rest) = file.strip_prefix("tests/") {
-        let stem = rest
-            .split('/')
-            .next()
-            .unwrap_or(rest)
-            .trim_end_matches(".rs");
-        return (vec![format!("{package}::{stem}")], false);
-    }
-    // Sources under src/ are in the library's binary or one of the program binaries.
-    (vec![package.to_string()], true)
+/// Cargo writes a package name with `-` where the crate name has `_`; both name the same package here.
+fn norm(package: &str) -> String {
+    package.replace('-', "_")
 }
 
-/// The outcome of one test on one OS: `Some(true)` when every matching case passed (at least one matched),
-/// `Some(false)` when one failed or was skipped, `None` when it did not run.
-#[must_use]
-pub fn outcome(results: &Results, package: &str, test: &TestRef, os: &str) -> Option<bool> {
-    let (suites, bins) = suites_for(package, &test.file);
-    let bin_prefix = format!("{package}::bin/");
-    let mut any = false;
-    let mut all_pass = true;
-    for run in results.runs.iter().filter(|r| r.os == os) {
-        for case in &run.cases {
-            let suite_ok =
-                suites.contains(&case.suite) || (bins && case.suite.starts_with(&bin_prefix));
-            let name_ok =
-                case.name == test.function || case.name.ends_with(&format!("::{}", test.function));
-            if suite_ok && name_ok {
-                any = true;
-                all_pass &= case.outcome == Outcome::Pass;
+/// The kind of test binary a suite names.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum Target {
+    /// The library's unit tests (`<package>`).
+    Lib,
+    /// A program's unit tests (`<package>::bin/<name>`).
+    Bin,
+    /// An integration test file (`<package>::<stem>`).
+    Test(String),
+}
+
+/// A suite name split into its package (empty when the log did not say) and target.
+fn split_suite(suite: &str) -> (String, Target) {
+    match suite.split_once("::") {
+        None => (norm(suite), Target::Lib),
+        Some((p, rest)) if rest.starts_with("bin/") => (norm(p), Target::Bin),
+        Some((p, rest)) => (norm(p), Target::Test(rest.to_string())),
+    }
+}
+
+/// The last segment of a test path (`module::tests::name` is `name`).
+fn last_segment(name: &str) -> &str {
+    name.rsplit("::").next().unwrap_or(name)
+}
+
+/// The results, indexed by OS, package, binary and test function name, so that the state of every item is a few
+/// lookups however many cases there are.
+#[derive(Debug, Default)]
+pub struct Index {
+    /// (os, package, target, function) -> (ran, every run passed).
+    cases: BTreeMap<(String, String, Target, String), bool>,
+}
+
+impl Index {
+    #[must_use]
+    pub fn new(results: &Results) -> Index {
+        let mut cases: BTreeMap<(String, String, Target, String), bool> = BTreeMap::new();
+        for run in &results.runs {
+            for case in &run.cases {
+                let (package, target) = split_suite(&case.suite);
+                let key = (
+                    run.os.clone(),
+                    package,
+                    target,
+                    last_segment(&case.name).to_string(),
+                );
+                let pass = case.outcome == Outcome::Pass;
+                cases.entry(key).and_modify(|p| *p &= pass).or_insert(pass);
             }
         }
+        Index { cases }
     }
-    any.then_some(all_pass)
+
+    /// The outcome of one test on one OS: `Some(true)` when every matching case passed (at least one matched),
+    /// `Some(false)` when one failed or was skipped, `None` when it did not run. `package` is the cargo package
+    /// the test's file belongs to and `file` the path inside that package (`src/cli.rs`, `tests/golden.rs`).
+    /// A suite whose package the log did not name (an integration test in cargo's older `deps/` layout) matches
+    /// no test: it could be any package's, so it never counts.
+    #[must_use]
+    pub fn outcome(&self, package: &str, file: &str, function: &str, os: &str) -> Option<bool> {
+        let targets = match file.strip_prefix("tests/") {
+            Some(rest) => {
+                let stem = rest
+                    .split('/')
+                    .next()
+                    .unwrap_or(rest)
+                    .trim_end_matches(".rs");
+                vec![Target::Test(stem.to_string())]
+            }
+            // Sources under src/ are in the library's binary or one of the program binaries.
+            None => vec![Target::Lib, Target::Bin],
+        };
+        let mut any = false;
+        let mut all_pass = true;
+        let package = norm(package);
+        for t in &targets {
+            let key = (
+                os.to_string(),
+                package.clone(),
+                t.clone(),
+                function.to_string(),
+            );
+            if let Some(p) = self.cases.get(&key) {
+                any = true;
+                all_pass &= *p;
+            }
+        }
+        any.then_some(all_pass)
+    }
+}
+
+/// The outcome of one test on one OS, for a repository of one package (see [`Index::outcome`]).
+#[must_use]
+pub fn outcome(results: &Results, package: &str, test: &TestRef, os: &str) -> Option<bool> {
+    Index::new(results).outcome(package, &test.file, &test.function, os)
+}
+
+/// Drops terminal colour codes (`ESC [ ... m`) from a line of cargo's output.
+fn strip_ansi(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                for d in chars.by_ref() {
+                    if d.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// The suite of a `Running <target> (<executable>)` line of `cargo test`, in the names cargo-nextest uses:
+/// `<package>` for the library's unit tests, `<package>::bin/<name>` for a program's, `<package>::<stem>` for
+/// `tests/<stem>.rs`. The package comes from the executable's path (`target/debug/build/<package>/<hash>/out/`,
+/// cargo's newer layout) or, for unit tests in the older `target/debug/deps/<crate>-<hash>` layout, from the
+/// crate name; an integration test in the older layout gets an empty package (and so never counts). `None` for a line that is not a
+/// test binary (doc tests, benches, examples).
+fn libtest_suite(rest: &str) -> Option<String> {
+    let (target, exe) = rest.rsplit_once(" (")?;
+    let exe = exe.trim_end_matches(')').replace('\\', "/");
+    let target = target.trim().replace('\\', "/");
+    let segments: Vec<&str> = exe.split('/').collect();
+    let file = segments.last()?;
+    let file = file.strip_suffix(".exe").unwrap_or(file);
+    let stem = file.rsplit_once('-').map_or(file, |(s, _)| s);
+    let package = segments
+        .iter()
+        .position(|s| *s == "build")
+        .filter(|&i| segments.get(i + 3) == Some(&"out"))
+        .and_then(|i| segments.get(i + 1))
+        .map(|p| (*p).to_string());
+    if let Some(unit) = target.strip_prefix("unittests ") {
+        let package = package.unwrap_or_else(|| stem.to_string());
+        if unit.ends_with("src/lib.rs") {
+            return Some(package);
+        }
+        return Some(format!("{package}::bin/{stem}"));
+    }
+    let test = target.strip_prefix("tests/")?;
+    let test_stem = test
+        .split('/')
+        .next()
+        .unwrap_or(test)
+        .trim_end_matches(".rs");
+    Some(format!("{}::{test_stem}", package.unwrap_or_default()))
+}
+
+/// Reads the cases of the text `cargo test` prints (libtest's own output, colour codes and all): each
+/// `Running ...` line starts a binary, each `test <name> ... ok|FAILED|ignored` line is a case of it. Doc tests,
+/// benches and lines before the first binary are left out; a case without a result word (its output got in the
+/// way) is left out too, so it never counts as passed.
+///
+/// # Errors
+/// When the text has no `Running` line at all (not cargo test output).
+pub fn parse_libtest(text: &str) -> Result<Vec<Case>, String> {
+    let mut cases = Vec::new();
+    let mut suite: Option<String> = None;
+    let mut seen = false;
+    for raw in text.lines() {
+        let line = strip_ansi(raw);
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("Running ") {
+            seen = true;
+            suite = libtest_suite(rest);
+            continue;
+        }
+        if trimmed.starts_with("Doc-tests ") {
+            seen = true;
+            suite = None;
+            continue;
+        }
+        let Some(s) = &suite else { continue };
+        let Some(body) = line.strip_prefix("test ") else {
+            continue;
+        };
+        let Some((name, result)) = body.rsplit_once(" ... ") else {
+            continue;
+        };
+        let outcome = match result.trim() {
+            "ok" => Outcome::Pass,
+            "FAILED" => Outcome::Fail,
+            r if r == "ignored" || r.starts_with("ignored, ") => Outcome::Skip,
+            _ => continue,
+        };
+        cases.push(Case {
+            suite: s.clone(),
+            name: name.trim().to_string(),
+            outcome,
+        });
+    }
+    if !seen {
+        return Err("not cargo test output: no `Running` line".into());
+    }
+    Ok(cases)
 }
 
 #[cfg(test)]

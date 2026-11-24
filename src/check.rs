@@ -524,28 +524,30 @@ fn check_tags(scan: &Scan, d: &Defined, out: &mut Vec<Finding>) {
     }
     // The guard counts the ids per test (or per data file), so splitting a long list over several calls does not
     // get around it.
-    let mut per_test: BTreeMap<String, (usize, bool, bool, String)> = BTreeMap::new();
+    let mut per_test: BTreeMap<String, (usize, bool, &str, String)> = BTreeMap::new();
     for s in &scan.sites {
-        let key = if s.data {
+        let key = if s.data && !s.map {
             s.file.clone()
         } else {
             s.test
                 .as_ref()
                 .map_or_else(|| format!("{}:{}", s.file, s.line), ToString::to_string)
         };
+        let how = if s.map {
+            "a reason in the row's `table` column"
+        } else if s.data {
+            "a `covers_table = \"<reason>\"` key"
+        } else {
+            "a `// covers-table: <reason>` comment in the test"
+        };
         let e = per_test
             .entry(key)
-            .or_insert((0, false, s.data, format!("{}:{}", s.file, s.line)));
+            .or_insert((0, false, how, format!("{}:{}", s.file, s.line)));
         e.0 += s.ids.len();
         e.1 |= s.table;
     }
-    for (count, table, data, at) in per_test.into_values() {
+    for (count, table, how, at) in per_test.into_values() {
         if count > BULK_LIMIT && !table {
-            let how = if data {
-                "a `covers_table = \"<reason>\"` key"
-            } else {
-                "a `// covers-table: <reason>` comment in the test"
-            };
             out.push(Finding::error(
                 "tag-bulk",
                 format!("{at}: one test tags {count} ids (more than {BULK_LIMIT}); a table-driven test says so with {how}"),
@@ -742,6 +744,9 @@ fn check_settings(cat: &Catalogue, out: &mut Vec<Finding>) {
     }
     for d in &cat.settings.data {
         paths.push(("catalogue/tally.toml data files".into(), d.files.clone()));
+    }
+    for m in &cat.settings.map {
+        paths.push(("catalogue/tally.toml map files".into(), m.files.clone()));
     }
     for e in &cat.settings.evidence {
         paths.push(("catalogue/tally.toml evidence path".into(), e.path.clone()));
