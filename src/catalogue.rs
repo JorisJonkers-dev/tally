@@ -521,9 +521,29 @@ pub fn load(root: &Path, dir: &Path) -> Result<Catalogue, String> {
         if let Some(list) = &gf.group.items_from {
             match read_list(&dir.join(list)) {
                 Ok(rows) => {
+                    let declared: BTreeMap<String, usize> = items
+                        .iter()
+                        .enumerate()
+                        .map(|(n, i)| (i.id.clone(), n))
+                        .collect();
                     for row in rows {
                         let id = format!("{}.{}", gf.group.id, row.key);
-                        if items.iter().any(|i| i.id == id) {
+                        // An [[item]] of a listed row states only what differs: it keeps the row's title (unless
+                        // it gives its own) and answers the row of the group's reference (unless it names refs).
+                        if let Some(&n) = declared.get(&id) {
+                            let it = &mut items[n];
+                            let decl = &gf.item[n];
+                            if decl.title.is_none() {
+                                it.title.clone_from(&row.title);
+                            }
+                            if decl.refs.is_empty() {
+                                it.refs = gf
+                                    .group
+                                    .reference
+                                    .iter()
+                                    .map(|s| format!("{s}:{}", row.key))
+                                    .collect();
+                            }
                             continue;
                         }
                         items.push(Item {

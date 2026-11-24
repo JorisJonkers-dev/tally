@@ -1526,3 +1526,24 @@ fn an_evidence_scope_naming_an_unknown_group_is_refused() {
     );
     r.fails_with("evidence-import");
 }
+
+#[test]
+fn an_item_of_a_listed_row_keeps_the_rows_title_and_reference() {
+    covers(&[ids::typed::ids::ITEMS_FROM, ids::check::refs::UNCLAIMED]);
+    let r = Repo::valid();
+    r.write(
+        "catalogue/cond/func.toml",
+        "[group]\nid = \"cond.func\"\ntitle = \"Condition functions\"\norigin = \"original\"\nreference = \"up\"\nitems_from = \"ref/up.tsv\"\n\n[[item]]\nid = \"file\"\nstatus = \"implemented\"\nevidence = [\"src/lib.rs#pub fn file\"]\n\n[[item]]\nid = \"active\"\ntitle = \"Active, our words\"\nstatus = \"partial\"\n",
+    );
+    r.passes(&[]);
+    let (_, out, _) = r.tally(&["report", "--depth", "3", "--format", "md"]);
+    assert!(out.contains("file(path)"), "{out}");
+    assert!(out.contains("Active, our words"), "{out}");
+    // An item that names its own refs keeps them: here a row that does not exist.
+    r.edit(
+        "catalogue/cond/func.toml",
+        "status = \"partial\"",
+        "status = \"partial\"\nref = [\"up:nothing\"]",
+    );
+    r.fails_with("ref-unknown");
+}
