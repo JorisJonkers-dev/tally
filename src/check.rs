@@ -400,18 +400,12 @@ fn check_evidence(cat: &Catalogue, scan: &Scan, out: &mut Vec<Finding>) {
 
 fn check_evidence_import(cat: &Catalogue, ev: &catalogue::Evidence, out: &mut Vec<Finding>) {
     let at = format!("catalogue/tally.toml evidence {}", ev.path);
-    if let Some((_, issue)) = refs::PLANNED.iter().find(|(k, _)| *k == ev.kind) {
-        out.push(Finding::error(
-            "evidence-planned",
-            format!("{at}: importer `{}` is not built yet ({issue})", ev.kind),
-        ));
-        return;
-    }
     let read: fn(&str, &catalogue::Evidence) -> Result<import::Rows, String> =
         match ev.kind.as_str() {
             "tsv" => import::tsv_rows,
             "ledger" => import::ledger_rows,
             "capabilities" => import::capabilities_rows,
+            "contracts" => import::contracts_rows,
             _ => {
                 out.push(Finding::error(
                     "evidence-kind",

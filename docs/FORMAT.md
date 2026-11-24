@@ -119,7 +119,7 @@ generator = "catalogue/tally_ids_gen.rs"   # default; "" turns the copy check of
 metadata = "Metadata file"   # titles for reports
 
 [[evidence]]             # an importer whose rows must agree with the declared states
-kind = "tsv"             # tsv, ledger or capabilities; contracts is planned
+kind = "tsv"             # tsv, ledger, capabilities or contracts
 path = "data/implemented.tsv"
 key_column = "id"
 status_column = "state"
@@ -149,11 +149,23 @@ partial but the file does not say so, or the other way round.
   The reference lists (every command of an extender) come from the extenders' own repositories through `manual` or
   `tsv` sources.
 
+- `contracts`: the JSON `ttwright contracts --json` prints, saved to a file by CI. `groups` names exactly one group;
+  every manifest feature a Contract lists under `supports.features[].id` is an implemented item of it, the id as a
+  segment (`asset_op:3` is `asset_op_3`, `variable:%DESTINATION%` is `variable__destination_`). A document that is
+  not `ttwright-contracts`, a feature without an id and two features that become one item are errors.
+
 ```toml
 [[evidence]]
 kind = "capabilities"
 path = ".fork/capabilities.json"
 groups = ["extenders.xnvse", "extenders.jip_ln"]
+```
+
+```toml
+[[evidence]]
+kind = "contracts"
+path = "target/contracts.json"   # ttwright contracts --json > target/contracts.json, before tally check
+groups = ["install.features"]
 ```
 
 ```toml

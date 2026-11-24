@@ -15,11 +15,6 @@ use std::process::Command;
 
 /// Extractors that exist.
 pub const EXTRACTORS: [&str; 3] = ["manual", "tsv", "ledger"];
-/// Extractors that are planned, each with its issue.
-pub const PLANNED: [(&str, &str); 1] = [(
-    "contracts",
-    "https://github.com/JorisJonkers-dev/tally/issues/5",
-)];
 
 fn is_hex(s: &str, len: usize) -> bool {
     s.len() == len
@@ -89,15 +84,7 @@ pub fn check(cat: &Catalogue) -> (Vec<Finding>, BTreeMap<String, Vec<RefRow>>) {
                 format!("{at}: no upstream files pinned; name the files the list was made from"),
             ));
         }
-        if let Some((_, issue)) = PLANNED.iter().find(|(k, _)| *k == s.extractor) {
-            out.push(Finding::error(
-                "extractor-planned",
-                format!(
-                    "{at}: extractor `{}` is not built yet ({issue})",
-                    s.extractor
-                ),
-            ));
-        } else if !EXTRACTORS.contains(&s.extractor.as_str()) {
+        if !EXTRACTORS.contains(&s.extractor.as_str()) {
             out.push(Finding::error(
                 "extractor-unknown",
                 format!("{at}: unknown extractor `{}`", s.extractor),

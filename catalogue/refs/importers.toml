@@ -21,6 +21,5 @@ status = "implemented"
 
 [[item]]
 id = "contracts"
-title = "ttwright contracts --json"
-status = "missing"
-notes = "Planned; the importer is a stub with an issue"
+title = "ttwright contracts --json: supported manifest features as evidence"
+status = "implemented"
