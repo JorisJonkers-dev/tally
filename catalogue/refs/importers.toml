@@ -16,9 +16,8 @@ status = "implemented"
 
 [[item]]
 id = "capabilities"
-title = "nv-rs .fork/capabilities.json"
-status = "missing"
-notes = "Planned; the importer is a stub with an issue"
+title = "nv-rs .fork/capabilities.json: implemented extender commands as evidence"
+status = "implemented"
 
 [[item]]
 id = "contracts"

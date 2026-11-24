@@ -5,8 +5,13 @@
 //! - `ledger`: the nv-rs function ledger (`scripts/ledger --tsv`) or engine map (`research/engine-map/
 //!   engine_map.tsv`): one row per engine function, keyed by its address. The item of a function is
 //!   `<group>.f<address>` with the address as eight lower-case hex digits (`engine.functions.f00401000`).
+//! - `capabilities`: nv-rs `.fork/capabilities.json`, the script commands each built-in extender implements. The
+//!   commands of extender `jip-ln` are the items of the group whose last segment is `jip_ln`; a command's item is its
+//!   name as an id segment ([`segment`]: `GetLNVersion` is `getlnversion`).
 
 use crate::catalogue::Evidence;
+use crate::ids::tally_ids_gen::valid_segment;
+use std::collections::BTreeMap;
 
 /// The states of the nv-rs ledger that mean a function is done: translated by hand, or run from a generated table.
 pub const LEDGER_DONE: [&str; 2] = ["translated", "static init (table)"];
@@ -30,6 +35,132 @@ pub fn ledger_key(addr: &str) -> Result<String, String> {
     }
     let n = u32::from_str_radix(hex, 16).map_err(|e| format!("`{addr}`: {e}"))?;
     Ok(format!("f{n:08x}"))
+}
+
+/// `name` as an id segment: lower-case ASCII, every other character `_`, `x` in front when it does not start with a
+/// letter, and `_` after a Rust keyword (`Return` is `return_`).
+#[must_use]
+pub fn segment(name: &str) -> String {
+    let mut s: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if !s.starts_with(|c: char| c.is_ascii_lowercase()) {
+        s.insert(0, 'x');
+    }
+    if !valid_segment(&s) {
+        s.push('_');
+    }
+    s
+}
+
+/// Item ids for `names` under `group`. A name listed again counts once; two different names that give the same
+/// segment are an error.
+fn named_rows<'a>(
+    group: &str,
+    names: impl IntoIterator<Item = &'a str>,
+    what: &str,
+) -> Result<Rows, String> {
+    let mut seen: BTreeMap<String, &str> = BTreeMap::new();
+    let mut rows = Vec::new();
+    for name in names {
+        if name.trim().is_empty() {
+            return Err(format!("{what} with an empty name"));
+        }
+        let seg = segment(name);
+        if let Some(other) = seen.insert(seg.clone(), name) {
+            if other == name {
+                continue;
+            }
+            return Err(format!(
+                "{what} `{other}` and `{name}` both become the item `{group}.{seg}`"
+            ));
+        }
+        rows.push((format!("{group}.{seg}"), true));
+    }
+    Ok(rows)
+}
+
+/// The rows of nv-rs `.fork/capabilities.json`: for each extender whose id (as a segment) is the last segment of one
+/// of the evidence's `groups`, every name in `commands.implemented_names` is an implemented item of that group.
+/// Extenders without a group are left out; a group without an extender is an error.
+///
+/// # Errors
+/// When the file is not that JSON, `groups` is empty, a group matches no extender, the count of implemented
+/// commands disagrees with the list, or two commands give the same item.
+pub fn capabilities_rows(text: &str, ev: &Evidence) -> Result<Rows, String> {
+    if ev.groups.is_empty() {
+        return Err(
+            "a capabilities importer names its groups in `groups` (one per extender)".into(),
+        );
+    }
+    let doc: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| format!("not JSON: {e}"))?;
+    let extenders = doc
+        .get("extenders")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("no `extenders` list")?;
+    let mut rows = Vec::new();
+    let mut matched = Vec::new();
+    for e in extenders {
+        let id = e
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .ok_or("an extender without an `id`")?;
+        let Some(group) = ev
+            .groups
+            .iter()
+            .find(|g| g.rsplit('.').next() == Some(segment(id).as_str()))
+        else {
+            continue;
+        };
+        if matched.contains(&group.as_str()) {
+            return Err(format!(
+                "extender `{id}` is the second extender of group `{group}` (an id listed twice, or two ids that give one segment)"
+            ));
+        }
+        matched.push(group.as_str());
+        let commands = e.get("commands");
+        let names: Vec<&str> = commands
+            .and_then(|c| c.get("implemented_names"))
+            .and_then(serde_json::Value::as_array)
+            .ok_or(format!(
+                "extender `{id}` has no `commands.implemented_names` list"
+            ))?
+            .iter()
+            .map(|n| {
+                n.as_str()
+                    .ok_or(format!("extender `{id}`: a command name is not a string"))
+            })
+            .collect::<Result<_, _>>()?;
+        if let Some(count) = commands
+            .and_then(|c| c.get("implemented"))
+            .and_then(serde_json::Value::as_u64)
+            && usize::try_from(count).ok() != Some(names.len())
+        {
+            return Err(format!(
+                "extender `{id}` says {count} commands are implemented but lists {}",
+                names.len()
+            ));
+        }
+        rows.extend(named_rows(
+            group,
+            names,
+            &format!("extender `{id}`: command"),
+        )?);
+    }
+    if let Some(g) = ev.groups.iter().find(|g| !matched.contains(&g.as_str())) {
+        return Err(format!(
+            "group `{g}` matches no extender of the file (its last segment must be an extender id)"
+        ));
+    }
+    Ok(rows)
 }
 
 /// A TSV table with its header: lines starting with `#` and empty lines are skipped, the first other line is the
@@ -158,3 +289,7 @@ pub fn ledger_list(text: &str) -> Result<String, String> {
 #[cfg(test)]
 #[path = "import_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "import_caps_tests.rs"]
+mod caps_tests;

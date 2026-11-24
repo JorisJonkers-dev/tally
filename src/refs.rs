@@ -16,16 +16,10 @@ use std::process::Command;
 /// Extractors that exist.
 pub const EXTRACTORS: [&str; 3] = ["manual", "tsv", "ledger"];
 /// Extractors that are planned, each with its issue.
-pub const PLANNED: [(&str, &str); 2] = [
-    (
-        "capabilities",
-        "https://github.com/JorisJonkers-dev/tally/issues/4",
-    ),
-    (
-        "contracts",
-        "https://github.com/JorisJonkers-dev/tally/issues/5",
-    ),
-];
+pub const PLANNED: [(&str, &str); 1] = [(
+    "contracts",
+    "https://github.com/JorisJonkers-dev/tally/issues/5",
+)];
 
 fn is_hex(s: &str, len: usize) -> bool {
     s.len() == len

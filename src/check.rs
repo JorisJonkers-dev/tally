@@ -411,6 +411,7 @@ fn check_evidence_import(cat: &Catalogue, ev: &catalogue::Evidence, out: &mut Ve
         match ev.kind.as_str() {
             "tsv" => import::tsv_rows,
             "ledger" => import::ledger_rows,
+            "capabilities" => import::capabilities_rows,
             _ => {
                 out.push(Finding::error(
                     "evidence-kind",
