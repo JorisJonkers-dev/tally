@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "report.format"
+title = "Reports"
+origin = "ours"
+
+[[item]]
+id = "term"
+title = "Terminal text with bars"
+status = "implemented"
+
+[[item]]
+id = "md"
+title = "Markdown tables"
+status = "implemented"
+
+[[item]]
+id = "json"
+title = "JSON, schema tally-report.v1"
+status = "implemented"
+
+[[item]]
+id = "svg"
+title = "SVG with implemented and covered bars per area"
+status = "implemented"
+
+[[item]]
+id = "depth"
+title = "Depth 1 areas, 2 groups, 3 items with their tests"
+status = "implemented"
+
+[[item]]
+id = "missing"
+title = "--missing keeps only missing items"
+status = "implemented"
+
+[[item]]
+id = "origin"
+title = "--origin keeps only original or our own items"
+status = "implemented"

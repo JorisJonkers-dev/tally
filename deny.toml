@@ -1,0 +1,46 @@
+# cargo-deny configuration. Run locally with `cargo deny check` (task deny).
+# The project itself is GPL-3.0-only; every third-party licence allowed below is compatible with it.
+
+[graph]
+targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc", "aarch64-apple-darwin", "x86_64-apple-darwin"]
+all-features = true
+
+[output]
+feature-depth = 1
+
+[advisories]
+version = 2
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# Add RUSTSEC ids here only with a comment saying why the advisory does not apply; an empty list is the goal.
+ignore = []
+yanked = "deny"
+
+[licenses]
+version = 2
+# What the dependency tree needs today. A new licence is added only after reading it for GPL-3.0 compatibility.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Unicode-3.0", # unicode-ident, through serde_derive
+]
+confidence-threshold = 0.8
+exceptions = []
+
+# This crate is publish = false, so its own GPL-3.0-only is not checked against `allow`.
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+highlight = "all"
+allow = []
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

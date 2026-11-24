@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "check.refs"
+title = "Two-way references"
+origin = "ours"
+
+[[item]]
+id = "unknown"
+title = "An item reference names an existing source and row"
+status = "implemented"
+
+[[item]]
+id = "unclaimed"
+title = "Every reference row has a catalogue item"
+status = "implemented"

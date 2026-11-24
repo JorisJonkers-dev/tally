@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "typed.ids"
+title = "Typed ids"
+origin = "ours"
+
+[[item]]
+id = "module"
+title = "The ids module has one constant per live item"
+status = "implemented"
+
+[[item]]
+id = "covers_log"
+title = "covers() appends to TALLY_COVERS_LOG when it is set"
+status = "implemented"
+
+[[item]]
+id = "alias"
+title = "An alias is a deprecated constant that names the new id"
+status = "implemented"
+
+[[item]]
+id = "retired"
+title = "A retired item has no constant"
+status = "implemented"
+
+[[item]]
+id = "items_from"
+title = "Rows of an items_from list become items"
+status = "implemented"
+
+[[item]]
+id = "compile_error"
+title = "A wrong id does not compile"
+status = "implemented"

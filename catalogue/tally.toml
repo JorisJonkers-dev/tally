@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# tally's own catalogue: what tally does, tagged by its own tests.
+[repo]
+package = "tally"
+
+[ids]
+# tally builds its ids module from its own source of the generator.
+generator = "src/idsgen.rs"
+
+[areas]
+check = "Checks"
+cmd = "Commands"
+report = "Reports"
+results = "Results"
+typed = "Typed ids"
+refs = "Reference lists"

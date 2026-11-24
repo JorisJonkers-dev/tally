@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "check.history"
+title = "History against the base and main"
+origin = "ours"
+
+[[item]]
+id = "removed"
+title = "An id of the base revision is not removed without retired or an alias"
+status = "implemented"
+
+[[item]]
+id = "unretired"
+title = "A retired id stays retired"
+status = "implemented"
+
+[[item]]
+id = "untagged_new"
+title = "A new implemented item without a tag is a warning"
+status = "implemented"
+
+[[item]]
+id = "ratchet"
+title = "The covered and tagged counts do not fall below the last report, unless allowed"
+status = "implemented"
