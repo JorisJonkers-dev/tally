@@ -73,6 +73,14 @@ Common options: `--root <dir>` (default `.`), `--catalogue <dir>` (default `<roo
    ```
 
 Reports, the JSON and the SVG are generated on `main` (by the progress bot), never committed in a pull request.
+The pattern is loot-rs's `.github/workflows/tally-progress.yml`: a render job without a token, then a commit job
+that copies a fixed list of report files and pushes them as the App. Make sure `.gitignore` does not match those
+files (a general `coverage/` rule does), and check it in the pull request pipeline, so the commit on `main` cannot
+fail on it:
+
+```sh
+git check-ignore --no-index -v docs/COVERAGE.md docs/coverage/tally-report.json docs/coverage/tally.svg && exit 1
+```
 
 ## Development
 
