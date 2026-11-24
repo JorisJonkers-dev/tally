@@ -325,6 +325,18 @@ fn a_ledger_extractor_reading_an_unpinned_file_is_refused() {
 }
 
 #[test]
+fn an_upstream_path_that_leaves_the_cache_is_refused() {
+    covers(&[ids::check::pins::UPSTREAM]);
+    let r = Repo::valid();
+    r.edit(
+        "catalogue/sources.toml",
+        "\"docs/conditions.md\" = ",
+        "\"../../evil.md\" = ",
+    );
+    r.fails_with("path-escape");
+}
+
+#[test]
 fn a_ledger_extractor_reading_a_pinned_file_passes() {
     covers(&[ids::check::pins::EXTRACTOR, ids::refs::importers::LEDGER]);
     let r = Repo::valid();

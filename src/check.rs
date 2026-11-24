@@ -724,6 +724,13 @@ fn check_settings(cat: &Catalogue, out: &mut Vec<Finding>) {
             format!("catalogue/sources.toml [{}] list", s.id),
             s.list.clone(),
         ));
+        // `refs fetch` writes each upstream file under its cache folder by this path.
+        for path in s.upstream.keys() {
+            paths.push((
+                format!("catalogue/sources.toml [{}] upstream", s.id),
+                path.clone(),
+            ));
+        }
     }
     for g in &cat.groups {
         if let Some(l) = &g.head.items_from {
