@@ -191,7 +191,12 @@ fn cmd_report(mut a: Args, out: &mut dyn Write) -> Result<i32, String> {
         missing,
         origin,
     };
-    let r = report::build(&cat, &sc.sites, results.as_ref(), &o);
+    // The picture lists the missing items of each area, so it always reads the items.
+    let build = report::Options {
+        depth: if format == Format::Svg { 3 } else { depth },
+        ..o.clone()
+    };
+    let r = report::build(&cat, &sc.sites, results.as_ref(), &build);
     write_out(path.as_deref(), &report::render(&r, &o), out)?;
     Ok(0)
 }

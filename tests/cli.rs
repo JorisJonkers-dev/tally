@@ -262,16 +262,80 @@ fn the_markdown_report_has_a_row_per_group_and_item_tables() {
 }
 
 #[test]
-fn the_svg_report_draws_two_bars_per_area() {
+fn the_svg_report_is_a_dark_panel_with_a_bar_per_area_and_its_counts() {
     covers(&[ids::report::format::SVG]);
     let r = Repo::valid();
     let out = report(&r, &["--format", "svg"]);
     assert!(out.starts_with("<svg"), "{out}");
-    assert_eq!(out.matches("fill=\"#9ecbff\"").count(), 3, "{out}");
-    assert_eq!(out.matches("fill=\"#0969da\"").count(), 3, "{out}");
+    assert!(out.contains("fill=\"#14110b\""), "{out}");
+    assert!(out.contains("DEMO · FEATURE CATALOGUE"), "{out}");
+    // One track per row: all areas, Conditions, ours.
+    assert_eq!(out.matches("fill=\"#2b2418\"/>").count(), 3, "{out}");
     assert!(
-        out.contains("2/3 implemented, 0 covered, 1 missing"),
+        out.contains(">2 of 3 implemented · 0 covered</text>"),
         "{out}"
+    );
+    assert!(
+        out.contains(">2 implemented, not covered (66.7%)</text>"),
+        "{out}"
+    );
+    assert!(out.contains(">1 n/a or deferred</text>"), "{out}");
+}
+
+#[test]
+fn the_svg_report_lists_the_missing_items_of_each_area() {
+    covers(&[ids::report::format::SVG]);
+    let out = report(&Repo::valid(), &["--format", "svg"]);
+    assert!(out.contains(">gaps: ours.extra.speed</text>"), "{out}");
+}
+
+#[test]
+fn the_svg_report_draws_covered_items_solid() {
+    covers(&[ids::report::format::SVG, ids::results::junit::COVERED]);
+    let r = Repo::valid();
+    let res = ingest_all(&r, JUNIT_PASS, JUNIT_PASS, JUNIT_PASS);
+    let out = report(&r, &["--format", "svg", "--results", &res]);
+    assert!(
+        out.contains("width=\"760\" height=\"12\" fill=\"#f2c14e\""),
+        "{out}"
+    );
+    assert!(
+        out.contains("covered: a tagged test passed on Linux, Windows and macOS"),
+        "{out}"
+    );
+}
+
+#[test]
+fn the_svg_report_cuts_a_long_area_title_before_the_counts() {
+    covers(&[ids::report::format::SVG]);
+    let r = Repo::valid();
+    let long = "Conditions ".repeat(12);
+    r.edit(
+        "catalogue/tally.toml",
+        "cond = \"Conditions\"",
+        &format!("cond = \"{long}\""),
+    );
+    let out = report(&r, &["--format", "svg"]);
+    let line = out
+        .lines()
+        .find(|l| l.contains(">Conditions Conditions"))
+        .expect("the area title is drawn");
+    let title = line
+        .split_once("\">")
+        .and_then(|(_, t)| t.strip_suffix("</text>"))
+        .expect("one text element");
+    assert!(title.ends_with('…'), "{line}");
+    // 760 px less the counts (30 characters at 7.8 px = 234 px) and a 20 px gap leaves 506 px: 64 characters.
+    assert_eq!(title.chars().count(), 64, "{line}");
+}
+
+#[test]
+fn the_svg_report_is_the_same_bytes_every_time() {
+    covers(&[ids::report::format::SVG]);
+    let r = Repo::valid();
+    assert_eq!(
+        report(&r, &["--format", "svg"]),
+        report(&r, &["--format", "svg", "--depth", "1"])
     );
 }
 
