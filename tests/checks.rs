@@ -289,10 +289,10 @@ fn a_planned_extractor_is_refused_with_its_issue() {
     r.edit(
         "catalogue/sources.toml",
         "extractor = \"manual\"",
-        "extractor = \"capabilities\"",
+        "extractor = \"contracts\"",
     );
     let out = r.fails_with("extractor-planned");
-    assert!(out.contains("tally/issues/4"), "{out}");
+    assert!(out.contains("tally/issues/5"), "{out}");
 }
 
 #[test]
@@ -719,17 +719,129 @@ fn a_ledger_without_exactly_one_group_is_refused() {
     r.fails_with("evidence-file");
 }
 
+/// A group of three xNVSE commands, and a capabilities file that lists `listed` as implemented.
+fn with_capabilities(r: &Repo, listed: &[&str], declared: [&str; 3]) {
+    let mut items = String::new();
+    for (c, d) in ["GetNVSEVersion", "GetWeight", "Return"]
+        .iter()
+        .zip(declared)
+    {
+        let id = tally::import::segment(c);
+        let _ = write!(
+            items,
+            "\n[[item]]\nid = \"{id}\"\ntitle = \"`{c}`\"\nstatus = \"{d}\"\n"
+        );
+    }
+    r.write(
+        "catalogue/ext/xnvse.toml",
+        &format!("[group]\nid = \"ext.xnvse\"\ntitle = \"xNVSE\"\norigin = \"original\"\n{items}"),
+    );
+    let names: Vec<String> = listed.iter().map(|n| format!("\"{n}\"")).collect();
+    let json = format!(
+        r#"{{"schema_version": 1, "extenders": [
+  {{"id": "xnvse", "name": "xNVSE", "commands": {{"implemented": {}, "implemented_names": [{}], "total": 3}}}},
+  {{"id": "jip-ln", "name": "JIP LN", "commands": {{"implemented": 1, "implemented_names": ["GetLNVersion"]}}}}
+]}}"#,
+        listed.len(),
+        names.join(", ")
+    );
+    with_evidence(
+        r,
+        "kind = \"capabilities\"\npath = \"data/implemented.tsv\"\ngroups = [\"ext.xnvse\"]\n",
+        &json,
+    );
+}
+
+#[test]
+fn a_capabilities_file_that_agrees_with_the_catalogue_passes() {
+    covers(&[
+        ids::check::evidence::IMPORT,
+        ids::refs::importers::CAPABILITIES,
+    ]);
+    let r = Repo::valid();
+    with_capabilities(
+        &r,
+        &["GetNVSEVersion", "Return"],
+        ["implemented", "missing", "implemented"],
+    );
+    r.passes(&[]);
+}
+
+#[test]
+fn a_capabilities_file_that_lacks_an_implemented_command_is_refused() {
+    covers(&[
+        ids::check::evidence::IMPORT,
+        ids::refs::importers::CAPABILITIES,
+    ]);
+    let r = Repo::valid();
+    with_capabilities(
+        &r,
+        &["GetNVSEVersion"],
+        ["implemented", "missing", "implemented"],
+    );
+    let out = r.fails_with("evidence-import");
+    assert!(out.contains("ext.xnvse.return_"), "{out}");
+}
+
+#[test]
+fn a_capabilities_file_that_lists_a_missing_command_is_refused() {
+    covers(&[
+        ids::check::evidence::IMPORT,
+        ids::refs::importers::CAPABILITIES,
+    ]);
+    let r = Repo::valid();
+    with_capabilities(
+        &r,
+        &["GetNVSEVersion", "GetWeight", "Return"],
+        ["implemented", "missing", "implemented"],
+    );
+    let out = r.fails_with("evidence-import");
+    assert!(out.contains("ext.xnvse.getweight"), "{out}");
+}
+
+#[test]
+fn a_capabilities_file_naming_an_unknown_command_is_refused() {
+    covers(&[
+        ids::check::evidence::IMPORT,
+        ids::refs::importers::CAPABILITIES,
+    ]);
+    let r = Repo::valid();
+    with_capabilities(
+        &r,
+        &["GetNVSEVersion", "Return", "Teleport"],
+        ["implemented", "missing", "implemented"],
+    );
+    let out = r.fails_with("evidence-import");
+    assert!(out.contains("ext.xnvse.teleport"), "{out}");
+}
+
+#[test]
+fn a_capabilities_group_without_its_extender_is_refused() {
+    covers(&[
+        ids::check::evidence::IMPORT,
+        ids::refs::importers::CAPABILITIES,
+    ]);
+    let r = Repo::valid();
+    with_capabilities(
+        &r,
+        &["GetNVSEVersion", "Return"],
+        ["implemented", "missing", "implemented"],
+    );
+    let text = r
+        .read("data/implemented.tsv")
+        .replace("\"xnvse\"", "\"kenvse\"");
+    r.write("data/implemented.tsv", &text);
+    let out = r.fails_with("evidence-file");
+    assert!(out.contains("matches no extender"), "{out}");
+}
+
 #[test]
 fn a_planned_evidence_importer_is_refused_with_its_issue() {
     covers(&[ids::check::evidence::IMPORT]);
     let r = Repo::valid();
-    with_evidence(
-        &r,
-        "kind = \"capabilities\"\npath = \".fork/capabilities.json\"\n",
-        "",
-    );
+    with_evidence(&r, "kind = \"contracts\"\npath = \"contracts.json\"\n", "");
     let out = r.fails_with("evidence-planned");
-    assert!(out.contains("tally/issues/4"), "{out}");
+    assert!(out.contains("tally/issues/5"), "{out}");
 }
 
 #[test]

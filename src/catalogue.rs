@@ -135,7 +135,7 @@ pub struct DataCases {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Evidence {
-    /// `tsv` or `ledger`; `capabilities` and `contracts` are planned.
+    /// `tsv`, `ledger` or `capabilities`; `contracts` is planned.
     pub kind: String,
     /// The file, relative to the repository root.
     pub path: String,
@@ -175,7 +175,7 @@ pub struct Source {
     /// The date the upstream files were read (YYYY-MM-DD).
     pub read: String,
     /// How the list is made: `manual` (written by hand from `upstream`), `tsv` (taken from an upstream TSV file),
-    /// `ledger` (one row per function of an nv-rs ledger or engine map); `capabilities` and `contracts` are planned.
+    /// `ledger` (one row per function of an nv-rs ledger or engine map).
     pub extractor: String,
     /// The list, relative to the catalogue directory (`ref/<name>.tsv`).
     pub list: String,
