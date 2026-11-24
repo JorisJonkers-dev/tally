@@ -621,6 +621,11 @@ fn an_area_left_out_of_the_total_keeps_its_own_row_but_not_the_headline() {
         serde_json::json!(["cond"]),
         "{json}"
     );
+    // A report with the area left out is still a ratchet over every item: dropping a tag in that area fails.
+    let path = r.path("report.json").to_string_lossy().into_owned();
+    report(&r, &["--format", "json", "--out", &path]);
+    r.edit("src/lib.rs", "covers(&[ids::cond::func::FILE]);", "");
+    r.fails_with_args("ratchet", &["--ratchet", &path]);
     let md = report(&r, &["--format", "md"]);
     assert!(
         md.contains("| **Total, except Conditions** | 0/1 |"),
