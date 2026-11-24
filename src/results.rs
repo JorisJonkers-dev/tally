@@ -204,19 +204,23 @@ pub fn os_from_name(path: &str) -> Option<&'static str> {
         .file_name()
         .map_or(path.into(), |n| n.to_string_lossy());
     let lower = name.to_ascii_lowercase();
-    PLATFORMS
+    let named: Vec<&'static str> = PLATFORMS
         .iter()
         .copied()
-        .find(|p| lower.contains(p))
-        .or_else(|| {
-            if lower.contains("ubuntu") {
-                Some("linux")
-            } else if lower.contains("darwin") || lower.contains("mac") {
-                Some("macos")
-            } else {
-                None
-            }
-        })
+        .filter(|p| lower.contains(p))
+        .collect();
+    if named.len() > 1 {
+        return None;
+    }
+    named.first().copied().or_else(|| {
+        if lower.contains("ubuntu") {
+            Some("linux")
+        } else if lower.contains("darwin") || lower.contains("mac") {
+            Some("macos")
+        } else {
+            None
+        }
+    })
 }
 
 /// The test binaries a source file's tests are in.

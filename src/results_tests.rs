@@ -63,6 +63,7 @@ fn the_os_is_read_from_the_file_name() {
     assert_eq!(os_from_name("x/darwin.xml"), Some("macos"));
     assert_eq!(os_from_name("Windows.xml"), Some("windows"));
     assert_eq!(os_from_name("linux/report.xml"), None);
+    assert_eq!(os_from_name("linux-windows.xml"), None);
 }
 
 #[test]

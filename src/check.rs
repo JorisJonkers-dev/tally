@@ -553,15 +553,34 @@ fn check_tags(scan: &Scan, d: &Defined, out: &mut Vec<Finding>) {
             };
             out.push(Finding::error("tag-unknown", format!("{at}: `{id}` {why}")));
         }
-        if s.ids.len() > BULK_LIMIT && !s.table {
-            let how = if s.data {
+    }
+    // The guard counts the ids per test (or per data file), so splitting a long list over several calls does not
+    // get around it.
+    let mut per_test: BTreeMap<String, (usize, bool, bool, String)> = BTreeMap::new();
+    for s in &scan.sites {
+        let key = if s.data {
+            s.file.clone()
+        } else {
+            s.test
+                .as_ref()
+                .map_or_else(|| format!("{}:{}", s.file, s.line), ToString::to_string)
+        };
+        let e = per_test
+            .entry(key)
+            .or_insert((0, false, s.data, format!("{}:{}", s.file, s.line)));
+        e.0 += s.ids.len();
+        e.1 |= s.table;
+    }
+    for (count, table, data, at) in per_test.into_values() {
+        if count > BULK_LIMIT && !table {
+            let how = if data {
                 "a `covers_table = \"<reason>\"` key"
             } else {
                 "a `// covers-table: <reason>` comment in the test"
             };
             out.push(Finding::error(
                 "tag-bulk",
-                format!("{at}: one test tags {} ids (more than {BULK_LIMIT}); a table-driven test says so with {how}", s.ids.len()),
+                format!("{at}: one test tags {count} ids (more than {BULK_LIMIT}); a table-driven test says so with {how}"),
             ));
         }
     }
@@ -614,9 +633,12 @@ pub fn base_ids(cat: &Catalogue, rev: &str) -> Result<BaseIds, String> {
             continue;
         }
         let text = git(&cat.root, &["show", &format!("{rev}:{f}")])?;
-        let Ok(gf) = toml::from_str::<GroupFile>(&text) else {
-            continue;
-        };
+        let gf = toml::from_str::<GroupFile>(&text).map_err(|e| {
+            format!(
+                "{f} at {rev} does not parse, so its ids cannot be compared: {}",
+                e.to_string().trim_end()
+            )
+        })?;
         for it in &gf.item {
             let id = format!("{}.{}", gf.group.id, it.id);
             if it.retired.is_some() {
@@ -626,10 +648,11 @@ pub fn base_ids(cat: &Catalogue, rev: &str) -> Result<BaseIds, String> {
             }
             aliases.extend(it.aliases.iter().cloned());
         }
-        if let Some(list) = &gf.group.items_from
-            && let Ok(t) = git(&cat.root, &["show", &format!("{rev}:{dir}/{list}")])
-        {
-            for row in catalogue::parse_list(&t).unwrap_or_default() {
+        if let Some(list) = &gf.group.items_from {
+            let t = git(&cat.root, &["show", &format!("{rev}:{dir}/{list}")])?;
+            for row in
+                catalogue::parse_list(&t).map_err(|e| format!("{dir}/{list} at {rev}: {e}"))?
+            {
                 let id = format!("{}.{}", gf.group.id, row.key);
                 if !retired.contains(&id) {
                     live.insert(id);
@@ -662,6 +685,14 @@ fn check_base(cat: &Catalogue, scan: &Scan, d: &Defined, rev: &str, out: &mut Ve
             out.push(Finding::error(
                 "unretired",
                 format!("`{id}` was retired at {rev}; a retired id is never used again"),
+            ));
+        }
+    }
+    for id in &d.retired {
+        if live.contains(id) {
+            out.push(Finding::warning(
+                "retired-new",
+                format!("`{id}` is retired since {rev}; it leaves the counts, so say why in the pull request"),
             ));
         }
     }
@@ -702,6 +733,89 @@ fn check_ratchet(counts: &Counts, o: &Options, out: &mut Vec<Finding>) {
     }
 }
 
+/// A path from the catalogue must stay inside the repository: relative, without `..`.
+fn escapes(path: &str) -> bool {
+    let p = Path::new(path);
+    p.is_absolute()
+        || path.starts_with('/')
+        || path.starts_with('\\')
+        || path.contains(':')
+        || p.components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+}
+
+fn check_settings(cat: &Catalogue, out: &mut Vec<Finding>) {
+    let mut paths: Vec<(String, String)> = Vec::new();
+    for s in &cat.sources.source {
+        paths.push((
+            format!("catalogue/sources.toml [{}] list", s.id),
+            s.list.clone(),
+        ));
+    }
+    for g in &cat.groups {
+        if let Some(l) = &g.head.items_from {
+            paths.push((format!("{} items_from", g.file), l.clone()));
+        }
+        for it in &g.items {
+            for e in &it.evidence {
+                paths.push((
+                    format!("{} `{}` evidence", g.file, it.id),
+                    e.split('#').next().unwrap_or("").to_string(),
+                ));
+            }
+        }
+    }
+    for d in &cat.settings.data {
+        paths.push(("catalogue/tally.toml data files".into(), d.files.clone()));
+    }
+    for e in &cat.settings.evidence {
+        paths.push(("catalogue/tally.toml evidence path".into(), e.path.clone()));
+    }
+    for p in &cat.settings.scan.paths {
+        paths.push(("catalogue/tally.toml scan path".into(), p.clone()));
+        if !escapes(p) && !cat.root.join(p).is_dir() {
+            out.push(Finding::error(
+                "settings",
+                format!("catalogue/tally.toml: scan path `{p}` is not a directory"),
+            ));
+        }
+    }
+    for (at, p) in paths {
+        if escapes(&p) {
+            out.push(Finding::error(
+                "path-escape",
+                format!("{at}: `{p}` must be a relative path inside the repository, without `..`"),
+            ));
+        }
+    }
+    if cat.settings.scan.paths.is_empty() {
+        out.push(Finding::error(
+            "settings",
+            "catalogue/tally.toml: scan.paths is empty, so no test would be read".into(),
+        ));
+    }
+    if cat.settings.ids.generator.as_deref() == Some("") {
+        out.push(Finding::warning(
+            "generator-off",
+            "catalogue/tally.toml: the generator copy check is off (ids.generator is empty)".into(),
+        ));
+    }
+    let known: BTreeSet<&str> = cat.groups.iter().map(|g| g.head.id.as_str()).collect();
+    for e in &cat.settings.evidence {
+        for g in &e.groups {
+            if !known.contains(g.as_str()) {
+                out.push(Finding::error(
+                    "evidence-import",
+                    format!(
+                        "catalogue/tally.toml evidence {}: group `{g}` is not in the catalogue",
+                        e.path
+                    ),
+                ));
+            }
+        }
+    }
+}
+
 /// Runs every check.
 #[must_use]
 pub fn run(cat: &Catalogue, scan: &Scan, o: &Options) -> Vec<Finding> {
@@ -711,6 +825,7 @@ pub fn run(cat: &Catalogue, scan: &Scan, o: &Options) -> Vec<Finding> {
         .map(|e| Finding::error("parse", e.clone()))
         .collect();
     check_ids(cat, &mut out);
+    check_settings(cat, &mut out);
     let d = defined(cat, &mut out);
     check_generator(cat, &mut out);
     check_refs(cat, &mut out);

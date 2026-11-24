@@ -1068,3 +1068,109 @@ fn the_sha_helper_is_the_pin_hash() {
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     );
 }
+
+#[test]
+fn ids_split_over_several_calls_in_one_test_still_count_for_the_bulk_guard() {
+    covers(&[ids::check::tags::BULK]);
+    let r = Repo::valid();
+    let six = ["ids::cond::func::FILE"; 6].join(", ");
+    r.edit(
+        "src/lib.rs",
+        "covers(&[ids::cond::func::FILE]);",
+        &format!("covers(&[{six}]);\n        covers(&[{six}]);"),
+    );
+    r.fails_with("tag-bulk");
+}
+
+#[test]
+fn a_base_whose_group_file_does_not_parse_is_refused() {
+    covers(&[ids::check::history::REMOVED]);
+    let r = Repo::valid();
+    r.edit(
+        "catalogue/ours/extra.toml",
+        "origin = \"ours\"",
+        "origin = \"elsewhere\"",
+    );
+    let base = r.commit();
+    r.edit(
+        "catalogue/ours/extra.toml",
+        "origin = \"elsewhere\"",
+        "origin = \"ours\"",
+    );
+    r.fails_with_args("base", &["--base", &base]);
+}
+
+#[test]
+fn an_item_retired_since_the_base_is_warned_about() {
+    covers(&[ids::check::history::REMOVED]);
+    let r = Repo::valid();
+    let base = r.commit();
+    r.edit(
+        "catalogue/ours/extra.toml",
+        "title = \"Fast sort\"\n",
+        "title = \"Fast sort\"\nretired = \"dropped\"\n",
+    );
+    let out = r.passes(&["--base", &base]);
+    assert!(out.contains("warning[retired-new]"), "{out}");
+}
+
+#[test]
+fn a_path_that_leaves_the_repository_is_refused() {
+    covers(&[ids::check::ids::PARSE]);
+    let r = Repo::valid();
+    r.edit(
+        "catalogue/cond/func.toml",
+        "src/lib.rs#pub fn file",
+        "../outside/lib.rs",
+    );
+    r.fails_with("path-escape");
+}
+
+#[test]
+fn an_empty_list_of_scan_paths_is_refused() {
+    covers(&[ids::check::tags::DATA]);
+    let r = Repo::valid();
+    let settings = r.read("catalogue/tally.toml");
+    r.write(
+        "catalogue/tally.toml",
+        &format!("[scan]\npaths = []\n\n{settings}"),
+    );
+    r.fails_with("settings");
+}
+
+#[test]
+fn a_scan_path_that_does_not_exist_is_refused() {
+    covers(&[ids::check::tags::DATA]);
+    let r = Repo::valid();
+    let settings = r.read("catalogue/tally.toml");
+    r.write(
+        "catalogue/tally.toml",
+        &format!("[scan]\npaths = [\"src\", \"tsets\"]\n\n{settings}"),
+    );
+    r.fails_with("settings");
+}
+
+#[test]
+fn turning_the_generator_check_off_is_warned_about() {
+    covers(&[ids::check::generator::COPY]);
+    let r = Repo::valid();
+    let settings = r.read("catalogue/tally.toml");
+    r.write(
+        "catalogue/tally.toml",
+        &format!("[ids]\ngenerator = \"\"\n\n{settings}"),
+    );
+    let out = r.passes(&[]);
+    assert!(out.contains("warning[generator-off]"), "{out}");
+}
+
+#[test]
+fn an_evidence_scope_naming_an_unknown_group_is_refused() {
+    covers(&[ids::check::evidence::IMPORT]);
+    let r = Repo::valid();
+    with_evidence(
+        &r,
+        "kind = \"tsv\"\npath = \"data/implemented.tsv\"\ngroups = [\"no.such\"]\n",
+        "id\n",
+    );
+    r.fails_with("evidence-import");
+}
