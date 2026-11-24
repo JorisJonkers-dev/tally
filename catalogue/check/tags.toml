@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "check.tags"
+title = "Test tags"
+origin = "ours"
+
+[[item]]
+id = "unknown"
+title = "Tags name live ids; retired and renamed ids are refused"
+status = "implemented"
+
+[[item]]
+id = "path"
+title = "covers() takes full ids:: constant paths only"
+status = "implemented"
+
+[[item]]
+id = "outside_test"
+title = "covers() is called inside a test function"
+status = "implemented"
+
+[[item]]
+id = "bulk"
+title = "More than ten ids in one test needs a covers-table reason"
+status = "implemented"
+
+[[item]]
+id = "ignored"
+title = "Ignored tests never count and are warned about"
+status = "implemented"
+
+[[item]]
+id = "data"
+title = "Data case files list covers and name an existing runner test"
+status = "implemented"

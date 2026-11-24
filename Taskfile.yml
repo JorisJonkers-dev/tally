@@ -1,0 +1,70 @@
+# One command per loop. `task` lists targets; `task check` is what CI runs (the Pipeline workflow runs the same
+# tasks as separate steps, so one failing check does not hide the others).
+version: "3"
+
+vars:
+  # Line coverage the tests must reach. The organisation requires at least 80.
+  COVERAGE_MIN: 90
+  # Unit-test files are not counted (cargo-llvm-cov already skips tests/).
+  COVERAGE_IGNORE: '_tests\.rs$'
+
+tasks:
+  default:
+    cmd: task --list
+    silent: true
+
+  fmt:
+    desc: Fail if any file is not rustfmt formatted
+    cmd: cargo fmt --check
+
+  lint:
+    desc: clippy with warnings as errors
+    cmd: cargo clippy --locked --all-targets -- -D warnings
+
+  test:
+    desc: Unit and integration tests (no coverage)
+    cmd: cargo test --locked
+
+  coverage:
+    desc: Tests with cargo-llvm-cov; fails under COVERAGE_MIN percent of lines
+    cmd: cargo llvm-cov --locked --fail-under-lines {{.COVERAGE_MIN}} --ignore-filename-regex '{{.COVERAGE_IGNORE}}'
+
+  self:
+    desc: tally checks its own catalogue and prints its own report
+    cmds:
+      - cargo run --locked --quiet -- check
+      - cargo run --locked --quiet -- report --depth 2
+
+  build:
+    desc: Release build
+    cmd: cargo build --locked --release
+
+  deny:
+    desc: Licences, bans, sources and advisories (deny.toml)
+    cmd: cargo deny check
+
+  lint:actions:
+    desc: actionlint and zizmor on every workflow
+    cmds:
+      - actionlint
+      - zizmor --offline --no-progress .github/workflows
+
+  secrets:
+    desc: Scan every commit for secrets
+    cmd: gitleaks git --redact --no-banner --config .gitleaks.toml .
+
+  check:
+    desc: Everything CI runs on a pull request
+    cmds:
+      - task: fmt
+      - task: lint
+      - task: coverage
+      - task: self
+      - task: build
+      - task: deny
+      - task: lint:actions
+      - task: secrets
+
+  fix:
+    desc: Apply formatting
+    cmd: cargo fmt

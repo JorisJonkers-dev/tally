@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "check.evidence"
+title = "Implementation evidence"
+origin = "ours"
+
+[[item]]
+id = "files"
+title = "Evidence paths exist and contain the named text"
+status = "implemented"
+
+[[item]]
+id = "state"
+title = "Only implemented or partial items carry evidence"
+status = "implemented"
+
+[[item]]
+id = "tagged_missing"
+title = "A test that tags a missing item is an error"
+status = "implemented"
+
+[[item]]
+id = "import"
+title = "A TSV evidence file and the catalogue agree on what is implemented"
+status = "implemented"

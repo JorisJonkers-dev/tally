@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "check.ids"
+title = "Catalogue ids"
+origin = "ours"
+
+[[item]]
+id = "syntax"
+title = "Ids are dotted lower-case segments and no Rust keyword"
+status = "implemented"
+
+[[item]]
+id = "path"
+title = "A group file lives at the path its id names"
+status = "implemented"
+
+[[item]]
+id = "unique"
+title = "Every id, alias and group id is defined once"
+status = "implemented"
+
+[[item]]
+id = "group_empty"
+title = "A group has at least one item"
+status = "implemented"
+
+[[item]]
+id = "reasons"
+title = "n/a and deferred items say why; gated and retired reasons are not empty"
+status = "implemented"
+
+[[item]]
+id = "top_level"
+title = "Group files sit in sub-directories, not next to tally.toml"
+status = "implemented"
+
+[[item]]
+id = "parse"
+title = "A file that does not parse is an error and the other checks still run"
+status = "implemented"

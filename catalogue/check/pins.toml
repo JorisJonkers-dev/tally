@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "check.pins"
+title = "Pinned reference lists"
+origin = "ours"
+
+[[item]]
+id = "commit"
+title = "A source pins a 40-digit commit, a tag, a read date and an https repository"
+status = "implemented"
+
+[[item]]
+id = "sha256"
+title = "A reference list matches its pinned SHA-256"
+status = "implemented"
+
+[[item]]
+id = "upstream"
+title = "A source names the upstream files it was read from, each with a SHA-256"
+status = "implemented"
+
+[[item]]
+id = "extractor"
+title = "An unknown or planned extractor is an error"
+status = "implemented"
+
+[[item]]
+id = "list"
+title = "A missing or malformed list is an error"
+status = "implemented"
+
+[[item]]
+id = "unique"
+title = "Source ids are unique and list keys appear once"
+status = "implemented"

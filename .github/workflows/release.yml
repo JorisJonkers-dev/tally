@@ -1,0 +1,213 @@
+# release-please keeps a release pull request open; merging it tags vX.Y.Z, writes CHANGELOG.md and bumps the
+# version in Cargo.toml. Nothing is published to a registry. Each release gets the tally binaries for Linux x86_64,
+# Windows x86_64 and macOS (universal) and SHA256SUMS as assets, with a build provenance attestation over all of
+# them. Repositories download the binary of a pinned tag in CI and check it against the SHA-256 they pin.
+# `workflow_dispatch` is the dry run: it builds the same assets from the selected ref and keeps them as a workflow
+# artifact; with `tag` and `publish` it republishes that existing tag.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: An existing release tag, vX.Y.Z. Empty runs the dry run from the selected ref
+        required: false
+        type: string
+      publish:
+        description: Upload the assets to that tag's release (false is a dry run)
+        required: false
+        default: false
+        type: boolean
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release-please:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      # Author the release PR with the release App token so CI runs on it; falls back to GITHUB_TOKEN when the App
+      # secrets are absent.
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app-token
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: rp
+        with:
+          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      # release-please cannot edit Cargo.lock, so the release PR would fail every `--locked` build. Refresh the
+      # crate's own lock entry on the release branch, with the App token so that CI runs on the commit.
+      - name: Find the release pull request
+        id: release-pr
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RELEASE_PR: ${{ steps.rp.outputs.pr }}
+        run: |
+          set -euo pipefail
+          branch=""
+          if [[ -n $RELEASE_PR ]]; then
+            branch="$(jq -r '.headBranchName // ""' <<<"$RELEASE_PR")"
+          fi
+          for _ in 1 2 3 4 5 6; do
+            [[ -n $branch ]] && break
+            branch="$(gh pr list --repo "$REPO" --state open --label 'autorelease: pending' --json headRefName --jq '.[0].headRefName // ""')"
+            [[ -n $branch ]] || sleep 10
+          done
+          echo "branch=$branch" >>"$GITHUB_OUTPUT"
+          echo "release pull request branch: ${branch:-none}"
+      - if: ${{ steps.release-pr.outputs.branch != '' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.release-pr.outputs.branch }}
+          persist-credentials: false
+      # `cargo update --workspace` only moves the crate's own entry; the 7-day crate cooldown in
+      # .cargo/config.toml holds. Never run a plain `cargo update` here.
+      - if: ${{ steps.release-pr.outputs.branch != '' }}
+        name: Refresh the lock entry of the crate
+        env:
+          PUSH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ steps.release-pr.outputs.branch }}
+        run: |
+          set -euo pipefail
+          cargo update --workspace
+          if git diff --quiet; then echo "the lock entry is current"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(release): refresh the lock entry"
+          git push "https://x-access-token:${PUSH_TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/${BRANCH}"
+
+  build:
+    needs: release-please
+    if: ${{ !cancelled() && ((github.event_name == 'push' && needs.release-please.outputs.release_created == 'true') || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request') }}
+    name: Build (${{ matrix.asset }})
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: tally-x86_64-unknown-linux-gnu
+          - os: windows-latest
+            asset: tally-x86_64-pc-windows-msvc.exe
+          - os: macos-latest
+            asset: tally-universal-apple-darwin
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || needs.release-please.outputs.tag_name || github.ref }}
+          persist-credentials: false
+      - name: Build
+        shell: bash
+        env:
+          ASSET: ${{ matrix.asset }}
+        run: |
+          set -euo pipefail
+          rustup toolchain install
+          mkdir -p dist
+          case "$ASSET" in
+            *apple-darwin)
+              rustup target add x86_64-apple-darwin aarch64-apple-darwin
+              cargo build --release --locked --target x86_64-apple-darwin
+              cargo build --release --locked --target aarch64-apple-darwin
+              lipo -create -output "dist/$ASSET" target/x86_64-apple-darwin/release/tally target/aarch64-apple-darwin/release/tally
+              lipo -archs "dist/$ASSET" | tee archs.txt
+              grep -qw arm64 archs.txt && grep -qw x86_64 archs.txt
+              ;;
+            *.exe)
+              cargo build --release --locked
+              cp target/release/tally.exe "dist/$ASSET"
+              ;;
+            *)
+              cargo build --release --locked
+              cp target/release/tally "dist/$ASSET"
+              ;;
+          esac
+      - name: Smoke test
+        shell: bash
+        env:
+          ASSET: ${{ matrix.asset }}
+        run: |
+          set -euo pipefail
+          chmod +x "dist/$ASSET" || true
+          "dist/$ASSET" --version
+          "dist/$ASSET" check
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+          retention-days: 7
+
+  assets:
+    needs: [release-please, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      PUBLISH: ${{ (github.event_name == 'push' && needs.release-please.outputs.release_created == 'true') || (github.event_name == 'workflow_dispatch' && inputs.tag != '' && inputs.publish) }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      - name: SHA256SUMS
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum tally-* | tee SHA256SUMS
+          test "$(wc -l < SHA256SUMS)" = 3
+      - name: Attest build provenance
+        if: ${{ env.PUBLISH == 'true' }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+      - name: Upload to the release
+        if: ${{ env.PUBLISH == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
+        run: gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+      - name: Keep the assets of a dry run
+        if: ${{ env.PUBLISH != 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets-dry-run
+          path: dist/
+          retention-days: 7

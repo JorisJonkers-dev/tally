@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "check.generator"
+title = "The build.rs generator"
+origin = "ours"
+
+[[item]]
+id = "reader"
+title = "The build.rs line reader and the TOML reader see the same ids"
+status = "implemented"
+
+[[item]]
+id = "copy"
+title = "The repository's generator copy is the one this tally ships"
+status = "implemented"

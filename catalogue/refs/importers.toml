@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "refs.importers"
+title = "Importers"
+origin = "ours"
+
+[[item]]
+id = "tsv"
+title = "Plain TSV lists and evidence files"
+status = "implemented"
+
+[[item]]
+id = "ledger"
+title = "The nv-rs ledger TSV"
+status = "missing"
+notes = "Planned; the importer is a stub with an issue"
+
+[[item]]
+id = "capabilities"
+title = "nv-rs .fork/capabilities.json"
+status = "missing"
+notes = "Planned; the importer is a stub with an issue"
+
+[[item]]
+id = "contracts"
+title = "ttwright contracts --json"
+status = "missing"
+notes = "Planned; the importer is a stub with an issue"

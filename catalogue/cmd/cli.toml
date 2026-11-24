@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "cmd.cli"
+title = "Commands"
+origin = "ours"
+
+[[item]]
+id = "check"
+title = "tally check reports errors and warnings and exits 1 on an error"
+status = "implemented"
+
+[[item]]
+id = "report"
+title = "tally report renders the catalogue"
+status = "implemented"
+
+[[item]]
+id = "refs_check"
+title = "tally refs check verifies the pins offline"
+status = "implemented"
+
+[[item]]
+id = "refs_fetch"
+title = "tally refs fetch downloads the pinned files and rebuilds TSV lists"
+status = "implemented"
+
+[[item]]
+id = "ingest"
+title = "tally ingest reads JUnit files into tally-results.v1"
+status = "implemented"
+
+[[item]]
+id = "ids_out"
+title = "tally ids --out writes the ids module"
+status = "implemented"
+
+[[item]]
+id = "ids_generator"
+title = "tally ids --generator writes the generator copy"
+status = "implemented"
+
+[[item]]
+id = "doc"
+title = "tally doc fills the generated tables of a document"
+status = "implemented"
+
+[[item]]
+id = "usage"
+title = "Wrong arguments exit 2 with the usage"
+status = "implemented"
