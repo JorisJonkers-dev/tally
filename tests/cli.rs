@@ -306,6 +306,30 @@ fn the_svg_report_draws_covered_items_solid() {
 }
 
 #[test]
+fn the_svg_report_cuts_a_long_area_title_before_the_counts() {
+    covers(&[ids::report::format::SVG]);
+    let r = Repo::valid();
+    let long = "Conditions ".repeat(12);
+    r.edit(
+        "catalogue/tally.toml",
+        "cond = \"Conditions\"",
+        &format!("cond = \"{long}\""),
+    );
+    let out = report(&r, &["--format", "svg"]);
+    let line = out
+        .lines()
+        .find(|l| l.contains(">Conditions Conditions"))
+        .expect("the area title is drawn");
+    let title = line
+        .split_once("\">")
+        .and_then(|(_, t)| t.strip_suffix("</text>"))
+        .expect("one text element");
+    assert!(title.ends_with('…'), "{line}");
+    // 760 px less the counts (30 characters at 7.8 px = 234 px) and a 20 px gap leaves 506 px: 64 characters.
+    assert_eq!(title.chars().count(), 64, "{line}");
+}
+
+#[test]
 fn the_svg_report_is_the_same_bytes_every_time() {
     covers(&[ids::report::format::SVG]);
     let r = Repo::valid();

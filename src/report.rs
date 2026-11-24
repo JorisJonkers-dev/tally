@@ -327,6 +327,24 @@ const WIDTH: usize = 800;
 const BAR: usize = 760;
 /// How many characters of the gap list fit on one line at the small font size.
 const GAP_CHARS: usize = 112;
+/// Width of one character in tenths of a pixel for the monospace font at 13 px and at 11 px (0.6 em).
+const CHAR_13: usize = 78;
+const CHAR_11: usize = 66;
+
+/// Pixels that `chars` characters take at a character width of `tenths` tenths of a pixel, rounded up.
+fn text_px(chars: usize, tenths: usize) -> usize {
+    (chars * tenths).div_ceil(10)
+}
+
+/// `text` cut to at most `max` characters, with an ellipsis when it was cut.
+fn fit(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let mut out: String = text.chars().take(max.saturating_sub(1)).collect();
+    out.push('…');
+    out
+}
 
 /// The ids of the missing items of an area, shortened to fit one line.
 fn gap_line(a: &AreaRow) -> Option<String> {
@@ -377,21 +395,28 @@ fn svg(r: &Report) -> String {
         let width = |part: usize| (part * BAR + c.total / 2).checked_div(c.total).unwrap_or(0);
         let covered = width(c.covered);
         let implemented = width(c.implemented).max(covered);
+        let not_covered = c.implemented.saturating_sub(c.covered);
         labels.push(format!(
             "{title} {} of {} implemented, {} covered",
             c.implemented, c.total, c.covered
         ));
-        let _ = writeln!(
-            body,
-            "  <text x=\"20\" y=\"{y}\" {FONT} font-size=\"13\" fill=\"{TEXT}\">{}</text>",
-            xml(&title)
-        );
-        let _ = writeln!(
-            body,
-            "  <text x=\"780\" y=\"{y}\" text-anchor=\"end\" {FONT} font-size=\"13\" fill=\"{AMBER}\">{} of {} implemented · {} covered</text>",
+        let counts = format!(
+            "{} of {} implemented · {} covered",
             thousands(c.implemented),
             thousands(c.total),
             thousands(c.covered)
+        );
+        // The title ends at least 20 px before the right-aligned counts start.
+        let room = BAR.saturating_sub(text_px(counts.chars().count(), CHAR_13) + 20);
+        let _ = writeln!(
+            body,
+            "  <text x=\"20\" y=\"{y}\" {FONT} font-size=\"13\" fill=\"{TEXT}\">{}</text>",
+            xml(&fit(&title, room * 10 / CHAR_13))
+        );
+        let _ = writeln!(
+            body,
+            "  <text x=\"780\" y=\"{y}\" text-anchor=\"end\" {FONT} font-size=\"13\" fill=\"{AMBER}\">{}</text>",
+            xml(&counts)
         );
         let bar_y = y + 8;
         let _ = writeln!(
@@ -421,7 +446,7 @@ fn svg(r: &Report) -> String {
             "  <rect x=\"20\" y=\"{bar_y}\" width=\"{BAR}\" height=\"12\" rx=\"4\" fill=\"none\" stroke=\"{EDGE}\" stroke-width=\"1\"/>"
         );
         // Legend: covered, implemented without a three-platform pass, missing; then what is left out of the count.
-        let legend_y = bar_y + 28;
+        let mut legend_y = bar_y + 28;
         let mut x = 20;
         let entries = [
             (
@@ -436,8 +461,8 @@ fn svg(r: &Report) -> String {
                 PALE,
                 format!(
                     "{} implemented, not covered ({})",
-                    thousands(c.implemented - c.covered),
-                    percent(c.implemented - c.covered, c.total)
+                    thousands(not_covered),
+                    percent(not_covered, c.total)
                 ),
             ),
             (
@@ -461,7 +486,7 @@ fn svg(r: &Report) -> String {
                 x + 16,
                 xml(&text)
             );
-            x += 16 + text.len() * 7 + 20;
+            x += 16 + text_px(text.chars().count(), CHAR_11) + 20;
         }
         let left_out = c.not_applicable + c.deferred;
         if left_out > 0 || c.gated > 0 {
@@ -472,10 +497,15 @@ fn svg(r: &Report) -> String {
             if left_out > 0 {
                 note.push(format!("{} n/a or deferred", thousands(left_out)));
             }
+            let note = note.join(" · ");
+            // The note goes on its own line when it would run into the legend.
+            if x + text_px(note.chars().count(), CHAR_11) > 780 {
+                legend_y += 16;
+            }
             let _ = writeln!(
                 body,
                 "  <text x=\"780\" y=\"{legend_y}\" text-anchor=\"end\" {FONT} font-size=\"11\" fill=\"{TEXT}\">{}</text>",
-                xml(&note.join(" · "))
+                xml(&note)
             );
         }
         y = legend_y;
@@ -529,5 +559,23 @@ pub fn render(r: &Report, o: &Options) -> String {
         Format::Md => md(r, o),
         Format::Json => serde_json::to_string_pretty(r).expect("the report serializes") + "\n",
         Format::Svg => svg(r),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{fit, text_px};
+
+    #[test]
+    fn fit_keeps_short_text_and_cuts_long_text_with_an_ellipsis() {
+        assert_eq!(fit("abc", 3), "abc");
+        assert_eq!(fit("abcdef", 4), "abc…");
+        assert_eq!(fit("abc", 0), "…");
+    }
+
+    #[test]
+    fn text_px_rounds_up() {
+        assert_eq!(text_px(10, 66), 66);
+        assert_eq!(text_px(1, 66), 7);
     }
 }
