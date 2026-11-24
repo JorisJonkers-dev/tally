@@ -125,3 +125,113 @@ fn a_source_test_matches_the_library_and_program_binaries() {
         None
     );
 }
+
+const CARGO_TEST: &str = "\u{1b}[1m\u{1b}[92m     Running\u{1b}[0m unittests src/lib.rs (target/debug/build/plugin-host/0123abcd/out/plugin_host-0123abcd)
+
+running 3 tests
+test tests::loads_a_plugin ... ok
+test tests::refuses_a_bad_one ... FAILED
+test tests::slow ... ignored, needs a game
+test result: FAILED. 1 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out
+
+     Running tests\\saves.rs (target\\debug\\build\\host/89ab\\out\\saves-89ab.exe)
+test a_save_round_trips ... ok
+     Running unittests src/main.rs (target/debug/deps/nv_viewer-77aa)
+test tests::opens ... ok
+     Running tests/old.rs (target/debug/deps/old-1234)
+test old_layout ... ok
+   Doc-tests plugin_host
+test crates/plugin-host/src/lib.rs - load (line 3) ... ok
+test tests::noisy ... some output
+";
+
+#[test]
+fn cargo_test_output_reads_into_cases_of_each_binary() {
+    covers(&[ids::results::libtest::CASES, ids::results::libtest::SUITES]);
+    let cases = parse_libtest(CARGO_TEST).unwrap();
+    let got: Vec<(&str, &str, Outcome)> = cases
+        .iter()
+        .map(|c| (c.suite.as_str(), c.name.as_str(), c.outcome))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            ("plugin-host", "tests::loads_a_plugin", Outcome::Pass),
+            ("plugin-host", "tests::refuses_a_bad_one", Outcome::Fail),
+            ("plugin-host", "tests::slow", Outcome::Skip),
+            ("host::saves", "a_save_round_trips", Outcome::Pass),
+            ("nv_viewer::bin/nv_viewer", "tests::opens", Outcome::Pass),
+            ("::old", "old_layout", Outcome::Pass),
+        ]
+    );
+}
+
+#[test]
+fn doc_tests_and_cases_without_a_result_never_count() {
+    covers(&[ids::results::libtest::PARTIAL]);
+    let cases = parse_libtest(CARGO_TEST).unwrap();
+    assert!(cases.iter().all(|c| !c.name.contains("line 3")));
+    assert!(cases.iter().all(|c| c.name != "tests::noisy"));
+    assert!(parse_libtest("test a ... ok\n").is_err());
+    assert_eq!(
+        parse_libtest(
+            "     Running benches/b.rs (target/release/deps/b-1)\ntest b ... bench: 1 ns/iter\n"
+        )
+        .unwrap(),
+        Vec::new()
+    );
+}
+
+#[test]
+fn a_workspace_test_matches_its_own_package_only() {
+    covers(&[
+        ids::results::workspace::PACKAGE,
+        ids::results::workspace::UNNAMED_PACKAGE,
+    ]);
+    let res = Results {
+        schema: SCHEMA.into(),
+        runs: vec![Run {
+            os: "windows".into(),
+            cases: parse_libtest(CARGO_TEST).unwrap(),
+        }],
+    };
+    let index = Index::new(&res);
+    // `plugin-host` and `plugin_host` are one package.
+    assert_eq!(
+        index.outcome("plugin_host", "src/lib.rs", "loads_a_plugin", "windows"),
+        Some(true)
+    );
+    assert_eq!(
+        index.outcome("plugin-host", "src/x.rs", "refuses_a_bad_one", "windows"),
+        Some(false)
+    );
+    assert_eq!(
+        index.outcome("plugin-host", "src/x.rs", "slow", "windows"),
+        Some(false)
+    );
+    assert_eq!(
+        index.outcome("host", "src/lib.rs", "loads_a_plugin", "windows"),
+        None
+    );
+    assert_eq!(
+        index.outcome("host", "tests/saves.rs", "a_save_round_trips", "windows"),
+        Some(true)
+    );
+    assert_eq!(
+        index.outcome("jip", "tests/saves.rs", "a_save_round_trips", "windows"),
+        None
+    );
+    assert_eq!(
+        index.outcome("nv-viewer", "src/main.rs", "opens", "windows"),
+        Some(true)
+    );
+    // The older layout names no package for an integration test: its binary alone decides.
+    assert_eq!(
+        index.outcome("anything", "tests/old.rs", "old_layout", "windows"),
+        Some(true)
+    );
+    assert_eq!(
+        index.outcome("host", "tests/saves.rs", "a_save_round_trips", "linux"),
+        None
+    );
+}

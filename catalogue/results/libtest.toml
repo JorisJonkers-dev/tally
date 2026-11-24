@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "results.libtest"
+title = "Results from cargo test output"
+origin = "ours"
+
+[[item]]
+id = "cases"
+title = "Each `test ... ok|FAILED|ignored` line is a case of the binary its `Running` line named"
+status = "implemented"
+
+[[item]]
+id = "suites"
+title = "Binaries get nextest's suite names; the package comes from the executable path"
+status = "implemented"
+
+[[item]]
+id = "partial"
+title = "Doc tests, benches and cases without a result word never count"
+status = "implemented"

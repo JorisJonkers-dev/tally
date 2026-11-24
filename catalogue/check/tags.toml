@@ -33,3 +33,13 @@ status = "implemented"
 id = "data"
 title = "Data case files list covers and name an existing runner test"
 status = "implemented"
+
+[[item]]
+id = "map"
+title = "Covers maps tag tests in files the repository does not edit; each row names an existing test"
+status = "implemented"
+
+[[item]]
+id = "map_bulk"
+title = "A covers map row with more than ten ids needs a reason in its table column"
+status = "implemented"

@@ -2,7 +2,7 @@
 //! The state of each item, from what the catalogue declares, the tests that tag it and the test results.
 
 use crate::catalogue::{Catalogue, Declared, Item};
-use crate::results::{self, PLATFORMS, Results};
+use crate::results::{Index, PLATFORMS, Results};
 use crate::scan::{Site, TestRef};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -83,14 +83,12 @@ pub fn tags(sites: &[Site]) -> BTreeMap<String, BTreeSet<TestRef>> {
     map
 }
 
+/// The outcome of one test on one OS (see [`Index::outcome`]).
+pub type OutcomeOf<'a> = &'a dyn Fn(&TestRef, &str) -> Option<bool>;
+
 /// The state of one item.
 #[must_use]
-pub fn of(
-    item: &Item,
-    tests: &BTreeSet<TestRef>,
-    results: Option<&Results>,
-    package: &str,
-) -> ItemState {
+pub fn of(item: &Item, tests: &BTreeSet<TestRef>, results: Option<OutcomeOf<'_>>) -> ItemState {
     let mut platforms = BTreeMap::new();
     let state = if item.retired.is_some() {
         State::Retired
@@ -105,12 +103,10 @@ pub fn of(
                 } else if tests.is_empty() {
                     State::Implemented
                 } else {
-                    if let Some(r) = results {
+                    if let Some(outcome) = results {
                         for os in PLATFORMS {
-                            let outcomes: Vec<Option<bool>> = tests
-                                .iter()
-                                .map(|t| results::outcome(r, package, t, os))
-                                .collect();
+                            let outcomes: Vec<Option<bool>> =
+                                tests.iter().map(|t| outcome(t, os)).collect();
                             let pass =
                                 outcomes.contains(&Some(true)) && !outcomes.contains(&Some(false));
                             platforms.insert(os.to_string(), pass);
@@ -139,10 +135,21 @@ pub fn of(
 #[must_use]
 pub fn all(cat: &Catalogue, sites: &[Site], results: Option<&Results>) -> Vec<ItemState> {
     let tags = tags(sites);
-    let package = cat.package();
     let empty = BTreeSet::new();
+    let index = results.map(Index::new);
+    let packages = std::cell::RefCell::new(BTreeMap::new());
+    let outcome = |t: &TestRef, os: &str| {
+        let index = index.as_ref()?;
+        let (package, file) = packages
+            .borrow_mut()
+            .entry(t.file.clone())
+            .or_insert_with(|| cat.package_for(&t.file))
+            .clone();
+        index.outcome(&package, &file, &t.function, os)
+    };
+    let outcome: Option<OutcomeOf<'_>> = results.map(|_| &outcome as OutcomeOf<'_>);
     cat.items()
-        .map(|i| of(i, tags.get(&i.id).unwrap_or(&empty), results, &package))
+        .map(|i| of(i, tags.get(&i.id).unwrap_or(&empty), outcome))
         .collect()
 }
 

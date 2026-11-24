@@ -21,7 +21,7 @@ usage:
                [--results <file>] [--out <file>]
   tally refs check
   tally refs fetch [--source <id>] [--cache <dir>] [--update]
-  tally ingest --junit <file>... [--os linux|windows|macos] [--out <file>] [--append]
+  tally ingest (--junit <file> | --libtest <file>)... [--os linux|windows|macos] [--out <file>] [--append]
   tally ids --out <path>          write the ids module (what build.rs writes)
   tally ids --generator <path>    write the generator copy build.rs includes
   tally doc <file> [--check]      fill the <!-- tally:group --> tables of a document
@@ -246,15 +246,16 @@ fn cmd_refs(mut a: Args, out: &mut dyn Write) -> Result<i32, String> {
 fn cmd_ingest(mut a: Args, out: &mut dyn Write) -> Result<i32, String> {
     // The common options are accepted; ingest reads and writes only the files it is given.
     let _ = ctx(&mut a)?;
-    let files = a.values("--junit")?;
+    let junit = a.values("--junit")?;
+    let libtest = a.values("--libtest")?;
     let os = a.value("--os")?;
     let path = a
         .value("--out")?
         .unwrap_or_else(|| "tally-results.json".into());
     let append = a.flag("--append");
     a.done()?;
-    if files.is_empty() {
-        return Err("ingest needs at least one --junit <file>".into());
+    if junit.is_empty() && libtest.is_empty() {
+        return Err("ingest needs at least one --junit <file> or --libtest <file>".into());
     }
     if let Some(o) = &os
         && !results::PLATFORMS.contains(&o.as_str())
@@ -266,13 +267,23 @@ fn cmd_ingest(mut a: Args, out: &mut dyn Write) -> Result<i32, String> {
     } else {
         Results::default()
     };
-    for f in files {
+    let files = junit
+        .into_iter()
+        .map(|f| (f, false))
+        .chain(libtest.into_iter().map(|f| (f, true)));
+    for (f, is_libtest) in files {
         let os = os
             .clone()
             .or_else(|| results::os_from_name(&f).map(str::to_string))
             .ok_or(format!("{f}: say which OS it is from with --os"))?;
-        let xml = fs::read_to_string(&f).map_err(|e| format!("{f}: {e}"))?;
-        let cases = results::parse_junit(&xml).map_err(|e| format!("{f}: {e}"))?;
+        let bytes = fs::read(&f).map_err(|e| format!("{f}: {e}"))?;
+        let text = String::from_utf8_lossy(&bytes);
+        let cases = if is_libtest {
+            results::parse_libtest(&text)
+        } else {
+            results::parse_junit(&text)
+        }
+        .map_err(|e| format!("{f}: {e}"))?;
         let _ = writeln!(out, "{f}: {} cases ({os})", cases.len());
         res.runs.push(Run { os, cases });
     }

@@ -41,8 +41,10 @@ pub struct Site {
     pub bad: Vec<String>,
     /// A `// covers-table: <reason>` comment justifies more than ten ids.
     pub table: bool,
-    /// True for a data case file.
+    /// True for a data case file and for a row of a covers map.
     pub data: bool,
+    /// True for a row of a covers map (`[[map]]`): a test in a file the repository does not tag in place.
+    pub map: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -400,6 +402,7 @@ pub fn scan_source(file: &str, src: &str) -> (Vec<Site>, Vec<TestFn>) {
                         bad,
                         table,
                         data: false,
+                        map: false,
                     });
                     i = end;
                     continue;
@@ -498,6 +501,78 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+fn escapes_root(path: &str) -> bool {
+    path.starts_with('/') || path.split('/').any(|seg| seg == "..") || path.contains(':')
+}
+
+/// The rows of a covers map: a TSV file with the header `test<TAB>covers` (and an optional third column `table`,
+/// the reason a row may name more than ten ids). `test` is `<file>::<function>` with the file relative to the
+/// repository root; `covers` lists full dotted ids, separated by commas or spaces. Empty lines and lines starting
+/// with `#` are skipped. A map tags tests in files the repository does not edit (nv-rs: upstream's test files).
+///
+/// # Errors
+/// When the header is wrong or a row has no test, a test without `::` or no ids.
+pub fn map_rows(file: &str, text: &str) -> Result<Vec<Site>, String> {
+    let mut lines = text
+        .lines()
+        .enumerate()
+        .filter(|(_, l)| !l.trim().is_empty() && !l.starts_with('#'));
+    let Some((_, header)) = lines.next() else {
+        return Err(format!("{file}: no `test<TAB>covers` header"));
+    };
+    let cols: Vec<&str> = header.split('\t').map(str::trim).collect();
+    if cols.len() < 2
+        || cols[0] != "test"
+        || cols[1] != "covers"
+        || cols.get(2).is_some_and(|c| *c != "table")
+        || cols.len() > 3
+    {
+        return Err(format!(
+            "{file}: the header must be `test<TAB>covers` or `test<TAB>covers<TAB>table`, not `{header}`"
+        ));
+    }
+    let mut out = Vec::new();
+    for (n, line) in lines {
+        let line_no = n + 1;
+        let fields: Vec<&str> = line.split('\t').collect();
+        let named = fields[0].trim();
+        let Some((test_file, function)) = named.rsplit_once("::") else {
+            return Err(format!(
+                "{file}:{line_no}: the test `{named}` must be `<file>::<function>`"
+            ));
+        };
+        let ids: Vec<String> = fields
+            .get(1)
+            .copied()
+            .unwrap_or("")
+            .split([',', ' '])
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect();
+        if ids.is_empty() {
+            return Err(format!("{file}:{line_no}: `{named}` covers no ids"));
+        }
+        let table = fields.get(2).is_some_and(|r| !r.trim().is_empty());
+        out.push(Site {
+            file: file.to_string(),
+            line: line_no,
+            test: Some(TestRef {
+                file: test_file.to_string(),
+                function: function.to_string(),
+            }),
+            is_test: true,
+            ignored: false,
+            ids,
+            bad: Vec::new(),
+            table,
+            data: true,
+            map: true,
+        });
+    }
+    Ok(out)
+}
+
 /// Everything the repository tags: `covers` calls in the scan paths and the data case files. Problems with data
 /// case files (unreadable, no `covers` list, a bad test reference) are in [`Scan::errors`].
 #[must_use]
@@ -583,7 +658,58 @@ pub fn scan(cat: &Catalogue) -> Scan {
                 bad,
                 table: table_reason,
                 data: true,
+                map: false,
             });
+        }
+    }
+    let scanned: std::collections::BTreeSet<String> =
+        tests.iter().map(|t| t.test.file.clone()).collect();
+    let mut extra_files: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for map in &cat.settings.map {
+        let files = glob(&cat.root, &map.files);
+        if files.is_empty() {
+            errors.push(format!(
+                "catalogue/tally.toml: map files `{}` match nothing",
+                map.files
+            ));
+        }
+        for f in files {
+            let file = rel(&cat.root, &f);
+            match fs::read_to_string(&f) {
+                Ok(text) => match map_rows(&file, &text) {
+                    Ok(rows) => {
+                        for site in rows {
+                            if let Some(t) = &site.test {
+                                extra_files.insert(t.file.clone());
+                            }
+                            sites.push(site);
+                        }
+                    }
+                    Err(e) => errors.push(e),
+                },
+                Err(e) => errors.push(format!("{file}: {e}")),
+            }
+        }
+    }
+    // The files a map names are read for their test functions (whether the test exists and is ignored), also when
+    // they are outside the scan paths; their own covers() calls are not taken from there.
+    for file in extra_files.difference(&scanned) {
+        if escapes_root(file) {
+            errors.push(format!(
+                "{file}: a covers map names a file outside the repository"
+            ));
+            continue;
+        }
+        if let Ok(src) = fs::read_to_string(cat.root.join(file)) {
+            let (_, t) = scan_source(file, &src);
+            tests.extend(t);
+        }
+    }
+    let ignored: std::collections::BTreeMap<TestRef, bool> =
+        tests.iter().map(|t| (t.test.clone(), t.ignored)).collect();
+    for s in sites.iter_mut().filter(|s| s.map) {
+        if let Some(t) = &s.test {
+            s.ignored = ignored.get(t).copied().unwrap_or(false);
         }
     }
     Scan {

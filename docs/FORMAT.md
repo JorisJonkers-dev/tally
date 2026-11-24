@@ -68,7 +68,15 @@ those lines without a TOML parser, and `tally check` fails when the two readers 
 | retired | not shown; the id stays reserved |
 
 A skipped or ignored test never counts, and neither does a test that needed a retry (`flakyFailure`). Results come
-from cargo-nextest JUnit (`[profile.ci.junit]`, `report-skipped = "all"`) through `tally ingest`.
+from cargo-nextest JUnit (`[profile.ci.junit]`, `report-skipped = "all"`) or from the text `cargo test` prints
+(`tally ingest --libtest <log>`) through `tally ingest`.
+
+`--libtest` reads each `Running <target> (<executable>)` line as the start of a test binary and each
+`test <name> ... ok|FAILED|ignored` line as one of its cases, under nextest's suite names (`<package>`,
+`<package>::bin/<name>`, `<package>::<test file stem>`). The package comes from the executable's path in cargo's
+`target/<profile>/build/<package>/<hash>/out/` layout; in the older `deps/` layout a library's unit tests are named
+by their crate, and an integration test gets no package and matches by its file stem alone. Doc tests, benches and
+a case whose result word got mixed up with other output never count.
 
 ## Tags in tests
 
@@ -101,6 +109,33 @@ test = "tests/golden.rs::every_case_prints_what_its_golden_file_says"
 covers = ["metadata.plugin_entry.req"]
 covers_table = "..."   # needed above ten ids
 ```
+
+Tests in files the repository does not edit (nv-rs: the test files upstream owns) are tagged from a covers map
+instead, a TSV per topic:
+
+```toml
+# catalogue/tally.toml
+[[map]]
+files = ".fork/catalogue/covers.d/*.tsv"
+```
+
+```text
+test	covers	table
+crates/jip/src/commands/jip_fn_linked_ref_tests.rs::set_linked_reference_links	extenders.jip_ln.setlinkedreference
+```
+
+`test` is `<file>::<function>` (the file relative to the repository root), `covers` lists full dotted ids
+separated by commas or spaces, and the optional `table` column is the reason a row may name more than ten ids.
+The header is `test<TAB>covers` or `test<TAB>covers<TAB>table`; empty lines and lines starting with `#` are
+skipped. `tally check` reads the named file (also outside the scan paths) and fails when the function is not a
+`#[test]` there; an ignored test is warned about and never counts. Rows for one test add up for the ten-id guard.
+
+## Workspaces
+
+A repository of many cargo packages needs nothing extra: each test file belongs to the package of the nearest
+`Cargo.toml` with a `[package]` above it (`crates/jip/src/lib.rs` is package `jip`, file `src/lib.rs`); files
+of the root package, or of none, belong to `[repo] package`. A package name with `-` and its crate name with `_`
+are the same package.
 
 ## tally.toml
 
