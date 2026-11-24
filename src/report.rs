@@ -297,74 +297,223 @@ fn xml(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-/// Two bars per area: implemented (pale) under covered (solid), with the gap counts beside them.
+/// `1234567` as `1,234,567`.
+fn thousands(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// `part` of `total` as a percentage with one decimal, computed in integers so the text is the same everywhere.
+fn percent(part: usize, total: usize) -> String {
+    let tenths = (part * 1000 + total / 2).checked_div(total).unwrap_or(0);
+    format!("{}.{}%", tenths / 10, tenths % 10)
+}
+
+const FONT: &str = "font-family=\"Consolas, 'Courier New', monospace\"";
+const PANEL: &str = "#14110b";
+const AMBER: &str = "#f2c14e";
+const PALE: &str = "#a77d2a";
+const TRACK: &str = "#2b2418";
+const EDGE: &str = "#5c4a26";
+const TEXT: &str = "#d9c9a3";
+const WIDTH: usize = 800;
+const BAR: usize = 760;
+/// How many characters of the gap list fit on one line at the small font size.
+const GAP_CHARS: usize = 112;
+
+/// The ids of the missing items of an area, shortened to fit one line.
+fn gap_line(a: &AreaRow) -> Option<String> {
+    let ids: Vec<&str> = a
+        .groups
+        .iter()
+        .flat_map(|g| g.items.iter())
+        .filter(|i| i.state == State::Missing)
+        .map(|i| i.id.as_str())
+        .collect();
+    if ids.is_empty() {
+        return None;
+    }
+    let mut line = String::from("gaps: ");
+    for (n, id) in ids.iter().enumerate() {
+        let rest = ids.len() - n;
+        let more = format!(" and {rest} more");
+        let sep = if n == 0 { "" } else { ", " };
+        if line.len() + sep.len() + id.len() + if rest > 1 { more.len() } else { 0 } > GAP_CHARS {
+            line.push_str(&more);
+            return Some(line);
+        }
+        line.push_str(sep);
+        line.push_str(id);
+    }
+    Some(line)
+}
+
+/// One panel in the style of the nv-rs progress pictures: a dark panel, a bar per area with covered (solid amber,
+/// passed on Linux, Windows and macOS) over implemented (pale), the counts on the right, a legend under each bar and
+/// the missing items listed. Byte-stable: the same report gives the same bytes.
 fn svg(r: &Report) -> String {
-    let row_h = 34;
-    let label_w = 220;
-    let bar_w = 300;
-    let width = label_w + bar_w + 300;
-    let height = 40 + row_h * (r.areas.len() + 1);
-    let mut s = String::new();
+    let mut body = String::new();
+    let mut y = 30;
+    let mut labels = Vec::new();
     let _ = writeln!(
-        s,
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\" font-family=\"sans-serif\" font-size=\"13\" role=\"img\" aria-label=\"{} coverage\">",
-        xml(&r.repo)
+        body,
+        "  <text x=\"20\" y=\"{y}\" {FONT} font-size=\"15\" fill=\"{AMBER}\">{} · FEATURE CATALOGUE</text>",
+        xml(&r.repo.to_uppercase())
     );
-    let _ = writeln!(
-        s,
-        "<title>{}: implemented and covered per area</title>",
-        xml(&r.repo)
+    let rows = std::iter::once(("All areas".to_string(), &r.totals, None)).chain(
+        r.areas
+            .iter()
+            .map(|a| (a.title.clone(), &a.counts, gap_line(a))),
     );
-    let _ = writeln!(s, "<rect width=\"100%\" height=\"100%\" fill=\"#ffffff\"/>");
-    let _ = writeln!(
-        s,
-        "<text x=\"8\" y=\"22\" font-weight=\"bold\" fill=\"#1f2328\">{}</text>",
-        xml(&r.repo)
-    );
-    let _ = writeln!(
-        s,
-        "<text x=\"{label_w}\" y=\"22\" fill=\"#59636e\">pale: implemented, solid: covered (Linux, Windows, macOS)</text>"
-    );
-    let rows = std::iter::once(("Total".to_string(), &r.totals))
-        .chain(r.areas.iter().map(|a| (a.title.clone(), &a.counts)));
-    for (n, (title, c)) in rows.enumerate() {
-        let y = 40 + n * row_h;
-        let w = |part: usize| (part * bar_w).checked_div(c.total).unwrap_or(0);
+    for (n, (title, c, gaps)) in rows.enumerate() {
+        y += 28;
+        let width = |part: usize| (part * BAR + c.total / 2).checked_div(c.total).unwrap_or(0);
+        let covered = width(c.covered);
+        let implemented = width(c.implemented).max(covered);
+        labels.push(format!(
+            "{title} {} of {} implemented, {} covered",
+            c.implemented, c.total, c.covered
+        ));
         let _ = writeln!(
-            s,
-            "<text x=\"8\" y=\"{}\" fill=\"#1f2328\">{}</text>",
-            y + 17,
+            body,
+            "  <text x=\"20\" y=\"{y}\" {FONT} font-size=\"13\" fill=\"{TEXT}\">{}</text>",
             xml(&title)
         );
         let _ = writeln!(
-            s,
-            "<rect x=\"{label_w}\" y=\"{}\" width=\"{bar_w}\" height=\"22\" fill=\"#eef1f4\"/>",
-            y + 2
+            body,
+            "  <text x=\"780\" y=\"{y}\" text-anchor=\"end\" {FONT} font-size=\"13\" fill=\"{AMBER}\">{} of {} implemented · {} covered</text>",
+            thousands(c.implemented),
+            thousands(c.total),
+            thousands(c.covered)
+        );
+        let bar_y = y + 8;
+        let _ = writeln!(
+            body,
+            "  <clipPath id=\"c{n}\"><rect x=\"20\" y=\"{bar_y}\" width=\"{BAR}\" height=\"12\" rx=\"4\"/></clipPath>"
         );
         let _ = writeln!(
-            s,
-            "<rect x=\"{label_w}\" y=\"{}\" width=\"{}\" height=\"22\" fill=\"#9ecbff\"/>",
-            y + 2,
-            w(c.implemented)
+            body,
+            "  <rect x=\"20\" y=\"{bar_y}\" width=\"{BAR}\" height=\"12\" rx=\"4\" fill=\"{TRACK}\"/>"
         );
+        if covered > 0 {
+            let _ = writeln!(
+                body,
+                "  <rect x=\"20\" y=\"{bar_y}\" width=\"{covered}\" height=\"12\" fill=\"{AMBER}\" clip-path=\"url(#c{n})\"/>"
+            );
+        }
+        if implemented > covered {
+            let _ = writeln!(
+                body,
+                "  <rect x=\"{}\" y=\"{bar_y}\" width=\"{}\" height=\"12\" fill=\"{PALE}\" clip-path=\"url(#c{n})\"/>",
+                20 + covered,
+                implemented - covered
+            );
+        }
         let _ = writeln!(
-            s,
-            "<rect x=\"{label_w}\" y=\"{}\" width=\"{}\" height=\"22\" fill=\"#0969da\"/>",
-            y + 2,
-            w(c.covered)
+            body,
+            "  <rect x=\"20\" y=\"{bar_y}\" width=\"{BAR}\" height=\"12\" rx=\"4\" fill=\"none\" stroke=\"{EDGE}\" stroke-width=\"1\"/>"
         );
-        let _ = writeln!(
-            s,
-            "<text x=\"{}\" y=\"{}\" fill=\"#1f2328\">{}/{} implemented, {} covered, {} missing, {} gated</text>",
-            label_w + bar_w + 10,
-            y + 17,
-            c.implemented,
-            c.total,
-            c.covered,
-            c.missing,
-            c.gated
-        );
+        // Legend: covered, implemented without a three-platform pass, missing; then what is left out of the count.
+        let legend_y = bar_y + 28;
+        let mut x = 20;
+        let entries = [
+            (
+                AMBER,
+                format!(
+                    "{} covered ({})",
+                    thousands(c.covered),
+                    percent(c.covered, c.total)
+                ),
+            ),
+            (
+                PALE,
+                format!(
+                    "{} implemented, not covered ({})",
+                    thousands(c.implemented - c.covered),
+                    percent(c.implemented - c.covered, c.total)
+                ),
+            ),
+            (
+                TRACK,
+                format!(
+                    "{} missing ({})",
+                    thousands(c.missing),
+                    percent(c.missing, c.total)
+                ),
+            ),
+        ];
+        for (colour, text) in entries {
+            let _ = writeln!(
+                body,
+                "  <rect x=\"{x}\" y=\"{}\" width=\"10\" height=\"10\" fill=\"{colour}\" stroke=\"{EDGE}\" stroke-width=\"1\"/>",
+                legend_y - 9
+            );
+            let _ = writeln!(
+                body,
+                "  <text x=\"{}\" y=\"{legend_y}\" {FONT} font-size=\"11\" fill=\"{TEXT}\">{}</text>",
+                x + 16,
+                xml(&text)
+            );
+            x += 16 + text.len() * 7 + 20;
+        }
+        let left_out = c.not_applicable + c.deferred;
+        if left_out > 0 || c.gated > 0 {
+            let mut note = Vec::new();
+            if c.gated > 0 {
+                note.push(format!("{} gated", thousands(c.gated)));
+            }
+            if left_out > 0 {
+                note.push(format!("{} n/a or deferred", thousands(left_out)));
+            }
+            let _ = writeln!(
+                body,
+                "  <text x=\"780\" y=\"{legend_y}\" text-anchor=\"end\" {FONT} font-size=\"11\" fill=\"{TEXT}\">{}</text>",
+                xml(&note.join(" · "))
+            );
+        }
+        y = legend_y;
+        if let Some(g) = gaps {
+            y += 16;
+            let _ = writeln!(
+                body,
+                "  <text x=\"20\" y=\"{y}\" {FONT} font-size=\"11\" fill=\"{PALE}\">{}</text>",
+                xml(&g)
+            );
+        }
     }
+    y += 26;
+    let foot = if r.results {
+        "covered: a tagged test passed on Linux, Windows and macOS"
+    } else {
+        "no test results given: nothing is covered yet"
+    };
+    let _ = writeln!(
+        body,
+        "  <text x=\"20\" y=\"{y}\" {FONT} font-size=\"11\" fill=\"{EDGE}\">{} · {}</text>",
+        xml(foot),
+        xml(&r.tool)
+    );
+    let height = y + 14;
+    let mut s = String::new();
+    let _ = writeln!(
+        s,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{WIDTH}\" height=\"{height}\" viewBox=\"0 0 {WIDTH} {height}\" role=\"img\" aria-label=\"{}: {}\">",
+        xml(&r.repo),
+        xml(&labels.join("; "))
+    );
+    let _ = writeln!(s, "  <title>{} · feature catalogue</title>", xml(&r.repo));
+    let _ = writeln!(
+        s,
+        "  <rect x=\"0\" y=\"0\" width=\"{WIDTH}\" height=\"{height}\" rx=\"10\" fill=\"{PANEL}\"/>"
+    );
+    s.push_str(&body);
     s.push_str("</svg>\n");
     s
 }
