@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/JorisJonkers-dev/tally/compare/v0.3.0...v0.4.0) (2026-11-24)
+
+
+### Features
+
+* workspaces, cargo test output and covers maps ([#15](https://github.com/JorisJonkers-dev/tally/issues/15)) ([ceed18e](https://github.com/JorisJonkers-dev/tally/commit/ceed18e61cc356e50b8244a8163a1b9881ba3848))
+
 ## [0.3.0](https://github.com/JorisJonkers-dev/tally/compare/v0.2.0...v0.3.0) (2026-11-24)
 
 
