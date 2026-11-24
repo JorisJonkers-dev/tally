@@ -8,6 +8,7 @@
 //! - `capabilities`: nv-rs `.fork/capabilities.json`, the script commands each built-in extender implements. The
 //!   commands of extender `jip-ln` are the items of the group whose last segment is `jip_ln`; a command's item is its
 //!   name as an id segment ([`segment`]: `GetLNVersion` is `getlnversion`).
+//! - `contracts`: the JSON of `ttwright contracts --json`: each supported manifest feature is an item of one group.
 
 use crate::catalogue::Evidence;
 use crate::ids::tally_ids_gen::valid_segment;
@@ -163,6 +164,51 @@ pub fn capabilities_rows(text: &str, ev: &Evidence) -> Result<Rows, String> {
     Ok(rows)
 }
 
+/// The rows of the JSON `ttwright contracts --json` prints (saved to a file): every manifest feature a Contract lists
+/// in `supports.features[].id` is an implemented item of the evidence's one group, its id as a segment ([`segment`]:
+/// `asset_op:3` is `asset_op_3`).
+///
+/// # Errors
+/// When the group is not exactly one, the file is not that JSON, a feature has no `id`, or two features give one item.
+pub fn contracts_rows(text: &str, ev: &Evidence) -> Result<Rows, String> {
+    let [group] = ev.groups.as_slice() else {
+        return Err(
+            "a contracts importer names exactly one group in `groups` (the group of the features)"
+                .into(),
+        );
+    };
+    let doc: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| format!("not JSON: {e}"))?;
+    if doc.get("contract").and_then(serde_json::Value::as_str) != Some("ttwright-contracts") {
+        return Err(
+            "not a `ttwright contracts --json` document (`contract` is not `ttwright-contracts`)"
+                .into(),
+        );
+    }
+    let contracts = doc
+        .get("contracts")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("no `contracts` list")?;
+    let mut ids = Vec::new();
+    for c in contracts {
+        let Some(features) = c
+            .get("supports")
+            .and_then(|s| s.get("features"))
+            .and_then(serde_json::Value::as_array)
+        else {
+            continue;
+        };
+        for f in features {
+            ids.push(
+                f.get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or("a feature without a string `id`")?,
+            );
+        }
+    }
+    named_rows(group, ids, "feature")
+}
+
 /// A TSV table with its header: lines starting with `#` and empty lines are skipped, the first other line is the
 /// header.
 struct Table<'a> {
@@ -293,3 +339,7 @@ mod tests;
 #[cfg(test)]
 #[path = "import_caps_tests.rs"]
 mod caps_tests;
+
+#[cfg(test)]
+#[path = "import_contracts_tests.rs"]
+mod contracts_tests;

@@ -283,16 +283,15 @@ fn an_upstream_file_without_a_valid_hash_is_refused() {
 }
 
 #[test]
-fn a_planned_extractor_is_refused_with_its_issue() {
-    covers(&[ids::check::pins::EXTRACTOR, ids::refs::importers::TSV]);
+fn an_evidence_only_importer_is_not_an_extractor() {
+    covers(&[ids::check::pins::EXTRACTOR]);
     let r = Repo::valid();
     r.edit(
         "catalogue/sources.toml",
         "extractor = \"manual\"",
         "extractor = \"contracts\"",
     );
-    let out = r.fails_with("extractor-planned");
-    assert!(out.contains("tally/issues/5"), "{out}");
+    r.fails_with("extractor-unknown");
 }
 
 #[test]
@@ -835,13 +834,103 @@ fn a_capabilities_group_without_its_extender_is_refused() {
     assert!(out.contains("matches no extender"), "{out}");
 }
 
+/// A group of three manifest features, and a handshake that lists `listed` as supported.
+fn with_contracts(r: &Repo, listed: &[&str], declared: [&str; 3]) {
+    let mut items = String::new();
+    for (f, d) in ["asset_op:0", "asset_op:2", "asset_op:3"]
+        .iter()
+        .zip(declared)
+    {
+        let id = tally::import::segment(f);
+        let _ = write!(
+            items,
+            "\n[[item]]\nid = \"{id}\"\ntitle = \"`{f}`\"\nstatus = \"{d}\"\n"
+        );
+    }
+    r.write(
+        "catalogue/ttw/features.toml",
+        &format!("[group]\nid = \"ttw.features\"\ntitle = \"Manifest features\"\norigin = \"original\"\n{items}"),
+    );
+    let features: Vec<String> = listed
+        .iter()
+        .map(|f| format!("{{\"id\": \"{f}\", \"description\": \"x\"}}"))
+        .collect();
+    let json = format!(
+        r#"{{"schema_version": 1, "contract": "ttwright-contracts", "tool": {{"name": "ttwright", "version": "0.5.0"}},
+"contracts": [
+  {{"name": "ttwright-result", "versions": [1], "supports": {{"packages": [], "features": [{}]}}}},
+  {{"name": "ttwright-events", "versions": [1]}}
+]}}"#,
+        features.join(", ")
+    );
+    with_evidence(
+        r,
+        "kind = \"contracts\"\npath = \"data/implemented.tsv\"\ngroups = [\"ttw.features\"]\n",
+        &json,
+    );
+}
+
 #[test]
-fn a_planned_evidence_importer_is_refused_with_its_issue() {
-    covers(&[ids::check::evidence::IMPORT]);
+fn a_contracts_file_that_agrees_with_the_catalogue_passes() {
+    covers(&[
+        ids::check::evidence::IMPORT,
+        ids::refs::importers::CONTRACTS,
+    ]);
     let r = Repo::valid();
-    with_evidence(&r, "kind = \"contracts\"\npath = \"contracts.json\"\n", "");
-    let out = r.fails_with("evidence-planned");
-    assert!(out.contains("tally/issues/5"), "{out}");
+    with_contracts(
+        &r,
+        &["asset_op:0", "asset_op:2"],
+        ["implemented", "implemented", "missing"],
+    );
+    r.passes(&[]);
+}
+
+#[test]
+fn a_contracts_file_that_lacks_an_implemented_feature_is_refused() {
+    covers(&[
+        ids::check::evidence::IMPORT,
+        ids::refs::importers::CONTRACTS,
+    ]);
+    let r = Repo::valid();
+    with_contracts(
+        &r,
+        &["asset_op:0"],
+        ["implemented", "implemented", "missing"],
+    );
+    let out = r.fails_with("evidence-import");
+    assert!(out.contains("ttw.features.asset_op_2"), "{out}");
+}
+
+#[test]
+fn a_contracts_file_that_lists_a_missing_feature_is_refused() {
+    covers(&[
+        ids::check::evidence::IMPORT,
+        ids::refs::importers::CONTRACTS,
+    ]);
+    let r = Repo::valid();
+    with_contracts(
+        &r,
+        &["asset_op:0", "asset_op:2", "asset_op:3"],
+        ["implemented", "implemented", "missing"],
+    );
+    let out = r.fails_with("evidence-import");
+    assert!(out.contains("ttw.features.asset_op_3"), "{out}");
+}
+
+#[test]
+fn a_contracts_file_naming_an_unknown_feature_is_refused() {
+    covers(&[
+        ids::check::evidence::IMPORT,
+        ids::refs::importers::CONTRACTS,
+    ]);
+    let r = Repo::valid();
+    with_contracts(
+        &r,
+        &["asset_op:0", "asset_op:2", "variable:9"],
+        ["implemented", "implemented", "missing"],
+    );
+    let out = r.fails_with("evidence-import");
+    assert!(out.contains("ttw.features.variable_9"), "{out}");
 }
 
 #[test]

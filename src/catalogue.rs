@@ -135,7 +135,7 @@ pub struct DataCases {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Evidence {
-    /// `tsv`, `ledger` or `capabilities`; `contracts` is planned.
+    /// `tsv`, `ledger`, `capabilities` or `contracts`.
     pub kind: String,
     /// The file, relative to the repository root.
     pub path: String,

@@ -21,7 +21,7 @@ status = "implemented"
 
 [[item]]
 id = "extractor"
-title = "An unknown or planned extractor is an error"
+title = "An unknown extractor is an error"
 status = "implemented"
 
 [[item]]
