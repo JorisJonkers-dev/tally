@@ -225,10 +225,10 @@ fn a_workspace_test_matches_its_own_package_only() {
         index.outcome("nv-viewer", "src/main.rs", "opens", "windows"),
         Some(true)
     );
-    // The older layout names no package for an integration test: its binary alone decides.
+    // The older layout names no package for an integration test: it could be any package's, so it never counts.
     assert_eq!(
         index.outcome("anything", "tests/old.rs", "old_layout", "windows"),
-        Some(true)
+        None
     );
     assert_eq!(
         index.outcome("host", "tests/saves.rs", "a_save_round_trips", "linux"),

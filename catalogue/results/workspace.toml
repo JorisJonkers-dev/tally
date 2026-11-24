@@ -11,5 +11,5 @@ status = "implemented"
 
 [[item]]
 id = "unnamed_package"
-title = "A suite without a package matches by its binary alone"
+title = "A suite without a package never counts: it could be any package's"
 status = "implemented"

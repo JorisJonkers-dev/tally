@@ -75,7 +75,7 @@ from cargo-nextest JUnit (`[profile.ci.junit]`, `report-skipped = "all"`) or fro
 `test <name> ... ok|FAILED|ignored` line as one of its cases, under nextest's suite names (`<package>`,
 `<package>::bin/<name>`, `<package>::<test file stem>`). The package comes from the executable's path in cargo's
 `target/<profile>/build/<package>/<hash>/out/` layout; in the older `deps/` layout a library's unit tests are named
-by their crate, and an integration test gets no package and matches by its file stem alone. Doc tests, benches and
+by their crate, and an integration test gets no package and never counts (it could be any package's). Doc tests, benches and
 a case whose result word got mixed up with other output never count.
 
 ## Tags in tests
@@ -127,7 +127,8 @@ crates/jip/src/commands/jip_fn_linked_ref_tests.rs::set_linked_reference_links	e
 `test` is `<file>::<function>` (the file relative to the repository root), `covers` lists full dotted ids
 separated by commas or spaces, and the optional `table` column is the reason a row may name more than ten ids.
 The header is `test<TAB>covers` or `test<TAB>covers<TAB>table`; empty lines and lines starting with `#` are
-skipped. `tally check` reads the named file (also outside the scan paths) and fails when the function is not a
+skipped; the file is written relative to the root with `/` and no `.`, `..` or empty segment, and a row has no more
+fields than the header. `tally check` reads the named file (also outside the scan paths) and fails when the function is not a
 `#[test]` there; an ignored test is warned about and never counts. Rows for one test add up for the ten-id guard.
 
 ## Workspaces

@@ -285,7 +285,7 @@ impl Index {
     /// `Some(false)` when one failed or was skipped, `None` when it did not run. `package` is the cargo package
     /// the test's file belongs to and `file` the path inside that package (`src/cli.rs`, `tests/golden.rs`).
     /// A suite whose package the log did not name (an integration test in cargo's older `deps/` layout) matches
-    /// by its binary alone.
+    /// no test: it could be any package's, so it never counts.
     #[must_use]
     pub fn outcome(&self, package: &str, file: &str, function: &str, os: &str) -> Option<bool> {
         let targets = match file.strip_prefix("tests/") {
@@ -302,15 +302,17 @@ impl Index {
         };
         let mut any = false;
         let mut all_pass = true;
-        for pkg in [norm(package), String::new()] {
-            for t in &targets {
-                if let Some(p) =
-                    self.cases
-                        .get(&(os.to_string(), pkg.clone(), t.clone(), function.to_string()))
-                {
-                    any = true;
-                    all_pass &= *p;
-                }
+        let package = norm(package);
+        for t in &targets {
+            let key = (
+                os.to_string(),
+                package.clone(),
+                t.clone(),
+                function.to_string(),
+            );
+            if let Some(p) = self.cases.get(&key) {
+                any = true;
+                all_pass &= *p;
             }
         }
         any.then_some(all_pass)
@@ -348,7 +350,7 @@ fn strip_ansi(line: &str) -> String {
 /// `<package>` for the library's unit tests, `<package>::bin/<name>` for a program's, `<package>::<stem>` for
 /// `tests/<stem>.rs`. The package comes from the executable's path (`target/debug/build/<package>/<hash>/out/`,
 /// cargo's newer layout) or, for unit tests in the older `target/debug/deps/<crate>-<hash>` layout, from the
-/// crate name; an integration test in the older layout gets an empty package. `None` for a line that is not a
+/// crate name; an integration test in the older layout gets an empty package (and so never counts). `None` for a line that is not a
 /// test binary (doc tests, benches, examples).
 fn libtest_suite(rest: &str) -> Option<String> {
     let (target, exe) = rest.rsplit_once(" (")?;

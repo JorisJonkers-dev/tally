@@ -153,6 +153,10 @@ fn a_map_with_a_bad_header_or_row_is_refused() {
         "test\tcovers\tnotes\ncrates/up/src/lib.rs::upstream_reads_a_file\tours.extra.speed\n",
         "test\tcovers\ncrates/up/src/lib.rs\tours.extra.speed\n",
         "test\tcovers\ncrates/up/src/lib.rs::upstream_reads_a_file\t\n",
+        "test\tcovers\ncrates/up/src/lib.rs::upstream_reads_a_file\tours.extra.speed\tsneaked reason\n",
+        "test\tcovers\n./crates/up/src/lib.rs::upstream_reads_a_file\tours.extra.speed\n",
+        "test\tcovers\ncrates//up/src/lib.rs::upstream_reads_a_file\tours.extra.speed\n",
+        "test\tcovers\ncrates\\up\\src\\lib.rs::upstream_reads_a_file\tours.extra.speed\n",
         "",
     ] {
         let r = with_map(text);

@@ -502,7 +502,20 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 fn escapes_root(path: &str) -> bool {
-    path.starts_with('/') || path.split('/').any(|seg| seg == "..") || path.contains(':')
+    path.starts_with('/')
+        || path.split('/').any(|seg| seg == "..")
+        || path.contains(':')
+        || path.contains('\\')
+}
+
+/// A path written the one way tally writes it: `/` separators, no empty, `.` or `..` segment. Two spellings of one
+/// file would be two tests to the ten-id guard.
+fn canonical(path: &str) -> bool {
+    !path.is_empty()
+        && !path.contains('\\')
+        && path
+            .split('/')
+            .all(|seg| !seg.is_empty() && seg != "." && seg != "..")
 }
 
 /// The rows of a covers map: a TSV file with the header `test<TAB>covers` (and an optional third column `table`,
@@ -535,12 +548,24 @@ pub fn map_rows(file: &str, text: &str) -> Result<Vec<Site>, String> {
     for (n, line) in lines {
         let line_no = n + 1;
         let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() > cols.len() {
+            return Err(format!(
+                "{file}:{line_no}: {} fields, but the header has {}",
+                fields.len(),
+                cols.len()
+            ));
+        }
         let named = fields[0].trim();
         let Some((test_file, function)) = named.rsplit_once("::") else {
             return Err(format!(
                 "{file}:{line_no}: the test `{named}` must be `<file>::<function>`"
             ));
         };
+        if !canonical(test_file) {
+            return Err(format!(
+                "{file}:{line_no}: write the file `{test_file}` relative to the repository root, with `/` and no `.`, `..` or empty segment"
+            ));
+        }
         let ids: Vec<String> = fields
             .get(1)
             .copied()
