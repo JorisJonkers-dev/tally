@@ -355,6 +355,11 @@ fn gap_line(a: &AreaRow) -> Option<String> {
         .filter(|i| i.state == State::Missing)
         .map(|i| i.id.as_str())
         .collect();
+    gap_line_of(&ids)
+}
+
+/// `gaps: ` and the ids, as many as fit in `GAP_CHARS` characters, then how many more there are.
+fn gap_line_of(ids: &[&str]) -> Option<String> {
     if ids.is_empty() {
         return None;
     }
@@ -362,12 +367,17 @@ fn gap_line(a: &AreaRow) -> Option<String> {
     for (n, id) in ids.iter().enumerate() {
         let rest = ids.len() - n;
         let more = format!(" and {rest} more");
-        let sep = if n == 0 { "" } else { ", " };
-        if line.len() + sep.len() + id.len() + if rest > 1 { more.len() } else { 0 } > GAP_CHARS {
+        let more_len = if rest > 1 { more.len() } else { 0 };
+        if n == 0 {
+            // The first id is always shown, cut when it alone is too long.
+            line.push_str(&fit(id, GAP_CHARS.saturating_sub(line.len() + more_len)));
+            continue;
+        }
+        if line.len() + 2 + id.len() + more_len > GAP_CHARS {
             line.push_str(&more);
             return Some(line);
         }
-        line.push_str(sep);
+        line.push_str(", ");
         line.push_str(id);
     }
     Some(line)
@@ -564,13 +574,23 @@ pub fn render(r: &Report, o: &Options) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{fit, text_px};
+    use super::{GAP_CHARS, fit, gap_line_of, text_px};
 
     #[test]
     fn fit_keeps_short_text_and_cuts_long_text_with_an_ellipsis() {
         assert_eq!(fit("abc", 3), "abc");
         assert_eq!(fit("abcdef", 4), "abc…");
         assert_eq!(fit("abc", 0), "…");
+    }
+
+    #[test]
+    fn a_gap_line_always_shows_the_first_missing_id() {
+        let ids = ["x".repeat(200), "short".to_string()];
+        let line =
+            gap_line_of(&ids.iter().map(String::as_str).collect::<Vec<_>>()).expect("a line");
+        assert!(line.starts_with("gaps: xxx"), "{line}");
+        assert!(line.ends_with("…, short"), "{line}");
+        assert!(line.chars().count() <= GAP_CHARS, "{line}");
     }
 
     #[test]
