@@ -154,6 +154,10 @@ generator = "catalogue/tally_ids_gen.rs"   # default; "" turns the copy check of
 [areas]
 metadata = "Metadata file"   # titles for reports
 
+[report]
+total = true                       # default; false shows only the per-area rows
+leave_out_of_total = ["engine"]    # areas the first row ("All areas except ...") does not count
+
 [[evidence]]             # an importer whose rows must agree with the declared states
 kind = "tsv"             # tsv, ledger, capabilities or contracts
 path = "data/implemented.tsv"
@@ -162,6 +166,11 @@ status_column = "state"
 implemented = ["done"]
 groups = ["engine.functions"]
 ```
+
+`leave_out_of_total` keeps a very large area (such as one item per engine function) from hiding every other area in
+the first row. The areas left out keep their own rows, and the JSON `totals` (which `tally check --ratchet` reads)
+still count every item; the first row is the JSON `headline` (`title`, `left_out`, `counts`), absent when `total`
+is false. Naming an area the catalogue does not have is an error.
 
 Each importer turns its file into rows of an item id and whether it is implemented; `tally check` fails when a row
 names an id the catalogue does not have (within `groups`) and when an item in `groups` is declared implemented or

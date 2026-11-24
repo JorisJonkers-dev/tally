@@ -780,6 +780,15 @@ fn check_settings(cat: &Catalogue, out: &mut Vec<Finding>) {
             "catalogue/tally.toml: the generator copy check is off (ids.generator is empty)".into(),
         ));
     }
+    let areas: BTreeSet<&str> = cat.groups.iter().map(catalogue::Group::area).collect();
+    for a in &cat.settings.report.leave_out_of_total {
+        if !areas.contains(a.as_str()) {
+            out.push(Finding::error(
+                "settings",
+                format!("catalogue/tally.toml: report.leave_out_of_total names `{a}`, which is not an area of the catalogue"),
+            ));
+        }
+    }
     let known: BTreeSet<&str> = cat.groups.iter().map(|g| g.head.id.as_str()).collect();
     for e in &cat.settings.evidence {
         for g in &e.groups {

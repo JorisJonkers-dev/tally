@@ -65,6 +65,8 @@ pub struct Settings {
     #[serde(default)]
     pub areas: BTreeMap<String, String>,
     #[serde(default)]
+    pub report: ReportSettings,
+    #[serde(default)]
     pub data: Vec<DataCases>,
     /// Covers maps: TSV files that tag tests in files the repository does not edit.
     #[serde(default)]
@@ -80,6 +82,32 @@ pub struct Settings {
 pub struct CoverMaps {
     /// A path pattern relative to the repository root (`.fork/catalogue/covers.d/*.tsv`).
     pub files: String,
+}
+
+/// `[report]`: what the headline row of a report (the first bar, the total line) counts.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReportSettings {
+    /// Show the headline row at all; `false` leaves only the per-area rows.
+    #[serde(default = "yes")]
+    pub total: bool,
+    /// Areas whose items the headline row leaves out, such as a very large area that would hide every other one.
+    /// They keep their own row, and `totals` in the JSON (which the ratchet reads) still counts them.
+    #[serde(default)]
+    pub leave_out_of_total: Vec<String>,
+}
+
+impl Default for ReportSettings {
+    fn default() -> Self {
+        ReportSettings {
+            total: true,
+            leave_out_of_total: Vec::new(),
+        }
+    }
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

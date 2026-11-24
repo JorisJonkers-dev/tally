@@ -585,3 +585,80 @@ fn version_and_help_exit_zero() {
     assert!(String::from_utf8_lossy(&out).starts_with("tally "));
     assert_eq!(tally::cli::run(&["help".into()], &mut out, &mut err), 0);
 }
+
+#[test]
+fn an_area_left_out_of_the_total_keeps_its_own_row_but_not_the_headline() {
+    covers(&[ids::report::format::HEADLINE]);
+    let r = Repo::valid();
+    r.edit(
+        "catalogue/tally.toml",
+        "[areas]",
+        "[report]\nleave_out_of_total = [\"cond\"]\n\n[areas]",
+    );
+    assert_eq!(r.check(&[]).0, 0, "{}", r.check(&[]).1);
+    let svg = report(&r, &["--format", "svg"]);
+    assert!(svg.contains(">All areas except Conditions</text>"), "{svg}");
+    assert!(!svg.contains(">All areas</text>"), "{svg}");
+    // Headline (ours: 0 of 1, the n/a item is not counted), Conditions (2 of 2), ours.
+    assert_eq!(svg.matches("fill=\"#2b2418\"/>").count(), 3, "{svg}");
+    assert_eq!(
+        svg.matches(">0 of 1 implemented · 0 covered</text>")
+            .count(),
+        2,
+        "{svg}"
+    );
+    assert!(
+        svg.contains(">2 of 2 implemented · 0 covered</text>"),
+        "{svg}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&report(&r, &["--format", "json"])).expect("json");
+    // The ratchet still sees every item.
+    assert_eq!(json["totals"]["total"], 3, "{json}");
+    assert_eq!(json["headline"]["counts"]["total"], 1, "{json}");
+    assert_eq!(
+        json["headline"]["left_out"],
+        serde_json::json!(["cond"]),
+        "{json}"
+    );
+    let md = report(&r, &["--format", "md"]);
+    assert!(
+        md.contains("| **Total, except Conditions** | 0/1 |"),
+        "{md}"
+    );
+    let term = report(&r, &[]);
+    assert!(term.contains("total except cond"), "{term}");
+}
+
+#[test]
+fn a_hidden_total_leaves_only_the_area_rows() {
+    covers(&[ids::report::format::HEADLINE]);
+    let r = Repo::valid();
+    r.edit(
+        "catalogue/tally.toml",
+        "[areas]",
+        "[report]\ntotal = false\n\n[areas]",
+    );
+    let svg = report(&r, &["--format", "svg"]);
+    assert!(!svg.contains(">All areas"), "{svg}");
+    assert_eq!(svg.matches("fill=\"#2b2418\"/>").count(), 2, "{svg}");
+    let json: serde_json::Value =
+        serde_json::from_str(&report(&r, &["--format", "json"])).expect("json");
+    assert!(json.get("headline").is_none(), "{json}");
+    assert_eq!(json["totals"]["total"], 3, "{json}");
+    assert!(!report(&r, &["--format", "md"]).contains("**Total"));
+    assert!(!report(&r, &[]).contains("\ntotal "));
+}
+
+#[test]
+fn leaving_out_an_area_the_catalogue_does_not_have_is_an_error() {
+    covers(&[ids::report::format::HEADLINE]);
+    let r = Repo::valid();
+    r.edit(
+        "catalogue/tally.toml",
+        "[areas]",
+        "[report]\nleave_out_of_total = [\"engine\"]\n\n[areas]",
+    );
+    let out = r.fails_with("settings");
+    assert!(out.contains("`engine`"), "{out}");
+}

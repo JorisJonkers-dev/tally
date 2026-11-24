@@ -38,3 +38,8 @@ status = "implemented"
 id = "origin"
 title = "--origin keeps only original or our own items"
 status = "implemented"
+
+[[item]]
+id = "headline"
+title = "report.total and report.leave_out_of_total pick what the first row counts"
+status = "implemented"

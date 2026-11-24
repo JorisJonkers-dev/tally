@@ -61,13 +61,27 @@ pub struct AreaRow {
     pub groups: Vec<GroupRow>,
 }
 
+/// The first row of a report: every area, less those `report.leave_out_of_total` names.
+#[derive(Clone, Debug, Serialize)]
+pub struct Headline {
+    pub title: String,
+    /// Area ids the counts leave out.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub left_out: Vec<String>,
+    pub counts: Counts,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Report {
     pub schema: &'static str,
     pub tool: String,
     pub repo: String,
     pub results: bool,
+    /// Every area; the ratchet reads these.
     pub totals: Counts,
+    /// What the reports show first; absent when `report.total` is false.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headline: Option<Headline>,
     pub areas: Vec<AreaRow>,
 }
 
@@ -131,14 +145,55 @@ pub fn build(cat: &Catalogue, sites: &[Site], results: Option<&Results>, o: &Opt
             });
         }
     }
+    let headline = headline(cat, &totals, &areas);
     Report {
         schema: SCHEMA,
         tool: format!("tally {}", env!("CARGO_PKG_VERSION")),
         repo: cat.name(),
         results: results.is_some(),
         totals,
+        headline,
         areas,
     }
+}
+
+/// The headline row: the totals less the areas the settings leave out, or nothing when the settings hide it.
+fn headline(cat: &Catalogue, totals: &Counts, areas: &[AreaRow]) -> Option<Headline> {
+    let settings = &cat.settings.report;
+    if !settings.total {
+        return None;
+    }
+    let left: Vec<&AreaRow> = areas
+        .iter()
+        .filter(|a| settings.leave_out_of_total.contains(&a.id))
+        .collect();
+    let mut counts = totals.clone();
+    for a in &left {
+        sub(&mut counts, &a.counts);
+    }
+    let title = if left.is_empty() {
+        "All areas".to_string()
+    } else {
+        let names: Vec<&str> = left.iter().map(|a| a.title.as_str()).collect();
+        format!("All areas except {}", names.join(", "))
+    };
+    Some(Headline {
+        title,
+        left_out: left.iter().map(|a| a.id.clone()).collect(),
+        counts,
+    })
+}
+
+fn sub(from: &mut Counts, c: &Counts) {
+    from.total -= c.total;
+    from.missing -= c.missing;
+    from.implemented -= c.implemented;
+    from.tagged -= c.tagged;
+    from.passing -= c.passing;
+    from.covered -= c.covered;
+    from.gated -= c.gated;
+    from.not_applicable -= c.not_applicable;
+    from.deferred -= c.deferred;
 }
 
 fn add(to: &mut Counts, c: &Counts) {
@@ -190,10 +245,13 @@ fn term(r: &Report, o: &Options) -> String {
         .areas
         .iter()
         .flat_map(|a| std::iter::once(a.id.len()).chain(a.groups.iter().map(|g| g.id.len() + 2)))
+        .chain(r.headline.iter().map(|h| term_total(h).len()))
         .max()
         .unwrap_or(4)
         .max(5);
-    let _ = writeln!(s, "{:width$}  {}", "total", line(&r.totals));
+    if let Some(h) = &r.headline {
+        let _ = writeln!(s, "{:width$}  {}", term_total(h), line(&h.counts));
+    }
     for a in &r.areas {
         let _ = writeln!(s, "{:width$}  {}", a.id, line(&a.counts));
         for g in &a.groups {
@@ -216,6 +274,15 @@ fn term(r: &Report, o: &Options) -> String {
     }
     let _ = o;
     s
+}
+
+/// `total`, or `total except engine` when areas are left out.
+fn term_total(h: &Headline) -> String {
+    if h.left_out.is_empty() {
+        "total".into()
+    } else {
+        format!("total except {}", h.left_out.join(", "))
+    }
 }
 
 fn md_escape(s: &str) -> String {
@@ -246,7 +313,15 @@ fn md(r: &Report, o: &Options) -> String {
             c.not_applicable + c.deferred
         );
     };
-    row(&mut s, "**Total**", &r.totals);
+    if let Some(h) = &r.headline {
+        let name = if h.left_out.is_empty() {
+            "**Total**".to_string()
+        } else {
+            let rest = h.title.strip_prefix("All areas ").unwrap_or(&h.title);
+            format!("**Total, {}**", md_escape(rest))
+        };
+        row(&mut s, &name, &h.counts);
+    }
     for a in &r.areas {
         row(&mut s, &format!("**{}**", md_escape(&a.title)), &a.counts);
         if o.depth >= 2 {
@@ -395,11 +470,15 @@ fn svg(r: &Report) -> String {
         "  <text x=\"20\" y=\"{y}\" {FONT} font-size=\"15\" fill=\"{AMBER}\">{} · FEATURE CATALOGUE</text>",
         xml(&r.repo.to_uppercase())
     );
-    let rows = std::iter::once(("All areas".to_string(), &r.totals, None)).chain(
-        r.areas
-            .iter()
-            .map(|a| (a.title.clone(), &a.counts, gap_line(a))),
-    );
+    let rows = r
+        .headline
+        .iter()
+        .map(|h| (h.title.clone(), &h.counts, None))
+        .chain(
+            r.areas
+                .iter()
+                .map(|a| (a.title.clone(), &a.counts, gap_line(a))),
+        );
     for (n, (title, c, gaps)) in rows.enumerate() {
         y += 28;
         let width = |part: usize| (part * BAR + c.total / 2).checked_div(c.total).unwrap_or(0);
