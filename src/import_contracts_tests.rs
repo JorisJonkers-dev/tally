@@ -68,3 +68,27 @@ fn two_features_that_give_one_item_are_an_error() {
     let err = contracts_rows(&text, &ev(&["ttw.features"])).unwrap_err();
     assert!(err.contains("both become"), "{err}");
 }
+
+#[test]
+fn a_feature_listed_by_two_contracts_counts_once() {
+    covers(&[ids::refs::importers::CONTRACTS]);
+    let text = HANDSHAKE.replace(
+        r#"{"name": "ttwright-events", "versions": [1]}"#,
+        r#"{"name": "ttwright-events", "versions": [1], "supports": {"packages": [], "features": [{"id": "asset_op:0", "description": "copy"}]}}"#,
+    );
+    assert_eq!(
+        contracts_rows(&text, &ev(&["ttw.features"])).unwrap().len(),
+        2
+    );
+}
+
+#[test]
+fn an_empty_feature_id_is_an_error() {
+    covers(&[ids::refs::importers::CONTRACTS]);
+    let text = HANDSHAKE.replace("asset_op:2", "");
+    assert!(
+        contracts_rows(&text, &ev(&["ttw.features"]))
+            .unwrap_err()
+            .contains("empty name")
+    );
+}
