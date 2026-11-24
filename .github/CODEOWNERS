@@ -1,0 +1,3 @@
+# The owner reviews every change, including workflow changes. (GitHub does not inherit CODEOWNERS from the
+# organisation's defaults repository.)
+* @ExtraToast

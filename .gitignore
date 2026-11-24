@@ -1,0 +1,25 @@
+# Build output
+target/
+dist/
+
+# Coverage output
+coverage/
+*.lcov
+
+# tally's own run output
+tally-results.json
+tally-report.json
+
+# Env / secrets (never commit)
+.env
+.env.*
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Local scratch
+scratchpad/
+.claude/worktrees/

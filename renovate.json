@@ -1,0 +1,18 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>JorisJonkers-dev/renovate-config"],
+  "description": "Cargo, mise.toml and the workflow pins. Rust crates are caret requirements and the exact versions live in Cargo.lock (update-lockfile).",
+  "includePaths": ["Cargo.toml", "Cargo.lock", "mise.toml", "rust-toolchain.toml", ".github/workflows/**"],
+  "packageRules": [
+    {
+      "description": "Crates from crates.io wait 7 days after publication, as Cargo does (.cargo/config.toml).",
+      "matchManagers": ["cargo"],
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Cargo: exact versions live in Cargo.lock.",
+      "matchManagers": ["cargo"],
+      "rangeStrategy": "update-lockfile"
+    }
+  ]
+}
