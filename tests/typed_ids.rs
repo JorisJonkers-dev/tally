@@ -131,20 +131,35 @@ fn tally_passes_its_own_check() {
 }
 
 fn compile(body: &str) -> (bool, String) {
-    let dir = std::env::temp_dir().join(format!("tally-compile-{}-{}", std::process::id(), body.len()));
+    let dir = std::env::temp_dir().join(format!(
+        "tally-compile-{}-{}",
+        std::process::id(),
+        body.len()
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let module = concat!(env!("OUT_DIR"), "/tally_ids.rs").replace('\\', "/");
     let src = dir.join("main.rs");
     std::fs::write(&src, format!("mod t {{\n    include!(\"{module}\");\n}}\nuse t::{{covers, ids, Id}};\nfn main() {{\n    {body}\n}}\n")).unwrap();
     let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".into());
     let out = std::process::Command::new(rustc)
-        .args(["--edition", "2024", "--crate-type", "bin", "--emit", "metadata", "-o"])
+        .args([
+            "--edition",
+            "2024",
+            "--crate-type",
+            "bin",
+            "--emit",
+            "metadata",
+            "-o",
+        ])
         .arg(dir.join("out.rmeta"))
         .arg(&src)
         .output()
         .unwrap();
     let _ = std::fs::remove_dir_all(&dir);
-    (out.status.success(), String::from_utf8_lossy(&out.stderr).into_owned())
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
 }
 
 #[test]

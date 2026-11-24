@@ -19,15 +19,15 @@ pub const EXTRACTORS: [&str; 2] = ["manual", "tsv"];
 pub const PLANNED: [(&str, &str); 3] = [
     (
         "ledger",
-        "https://github.com/JorisJonkers-dev/tally/issues/1",
+        "https://github.com/JorisJonkers-dev/tally/issues/3",
     ),
     (
         "capabilities",
-        "https://github.com/JorisJonkers-dev/tally/issues/2",
+        "https://github.com/JorisJonkers-dev/tally/issues/4",
     ),
     (
         "contracts",
-        "https://github.com/JorisJonkers-dev/tally/issues/3",
+        "https://github.com/JorisJonkers-dev/tally/issues/5",
     ),
 ];
 
