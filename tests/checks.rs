@@ -290,7 +290,7 @@ fn a_planned_extractor_is_refused_with_its_issue() {
         "extractor = \"ledger\"",
     );
     let out = r.fails_with("extractor-planned");
-    assert!(out.contains("tally/issues/1"), "{out}");
+    assert!(out.contains("tally/issues/3"), "{out}");
 }
 
 #[test]
@@ -578,7 +578,7 @@ fn a_planned_evidence_importer_is_refused_with_its_issue() {
         "",
     );
     let out = r.fails_with("evidence-planned");
-    assert!(out.contains("tally/issues/2"), "{out}");
+    assert!(out.contains("tally/issues/4"), "{out}");
 }
 
 #[test]
