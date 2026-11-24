@@ -3,6 +3,8 @@
 
 mod common;
 
+use std::fmt::Write as _;
+
 use common::{LIST, Repo, covers, ids, sha, sources};
 
 #[test]
@@ -287,10 +289,68 @@ fn a_planned_extractor_is_refused_with_its_issue() {
     r.edit(
         "catalogue/sources.toml",
         "extractor = \"manual\"",
-        "extractor = \"ledger\"",
+        "extractor = \"capabilities\"",
     );
     let out = r.fails_with("extractor-planned");
-    assert!(out.contains("tally/issues/3"), "{out}");
+    assert!(out.contains("tally/issues/4"), "{out}");
+}
+
+#[test]
+fn a_ledger_extractor_without_its_table_is_refused() {
+    covers(&[ids::check::pins::EXTRACTOR, ids::refs::importers::LEDGER]);
+    let r = Repo::valid();
+    r.edit(
+        "catalogue/sources.toml",
+        "extractor = \"manual\"",
+        "extractor = \"ledger\"",
+    );
+    r.fails_with("extractor-ledger");
+}
+
+#[test]
+fn a_ledger_extractor_reading_an_unpinned_file_is_refused() {
+    covers(&[ids::check::pins::EXTRACTOR, ids::refs::importers::LEDGER]);
+    let r = Repo::valid();
+    r.edit(
+        "catalogue/sources.toml",
+        "extractor = \"manual\"",
+        "extractor = \"ledger\"",
+    );
+    let text = r.read("catalogue/sources.toml");
+    r.write(
+        "catalogue/sources.toml",
+        &format!("{text}\n[source.ledger]\nfrom = \"research/engine_map.tsv\"\n"),
+    );
+    r.fails_with("extractor-ledger");
+}
+
+#[test]
+fn an_upstream_path_that_leaves_the_cache_is_refused() {
+    covers(&[ids::check::pins::UPSTREAM]);
+    let r = Repo::valid();
+    r.edit(
+        "catalogue/sources.toml",
+        "\"docs/conditions.md\" = ",
+        "\"../../evil.md\" = ",
+    );
+    r.fails_with("path-escape");
+}
+
+#[test]
+fn a_ledger_extractor_reading_a_pinned_file_passes() {
+    covers(&[ids::check::pins::EXTRACTOR, ids::refs::importers::LEDGER]);
+    let r = Repo::valid();
+    r.edit(
+        "catalogue/sources.toml",
+        "extractor = \"manual\"",
+        "extractor = \"ledger\"",
+    );
+    let text = r.read("catalogue/sources.toml");
+    r.write(
+        "catalogue/sources.toml",
+        &format!("{text}\n[source.ledger]\nfrom = \"docs/conditions.md\"\n"),
+    );
+    r.passes(&[]);
 }
 
 #[test]
@@ -565,6 +625,97 @@ fn a_missing_evidence_file_is_refused() {
         "id\n",
     );
     r.remove("data/implemented.tsv");
+    r.fails_with("evidence-file");
+}
+
+/// A group of three engine functions; the ledger says the first and the third are done.
+fn with_ledger(r: &Repo, statuses: [&str; 3], declared: [&str; 3]) {
+    let addrs = ["00401000", "00401020", "00401030"];
+    let mut items = String::new();
+    let mut rows = String::new();
+    for ((a, d), st) in addrs.iter().zip(declared).zip(statuses) {
+        let _ = write!(
+            items,
+            "\n[[item]]\nid = \"f{a}\"\ntitle = \"0x{a}\"\nstatus = \"{d}\"\n"
+        );
+        let _ = writeln!(rows, "{a}\t16\tFn_{a}\tcore\tunit\t{st}\t\t");
+    }
+    r.write(
+        "catalogue/engine/fns.toml",
+        &format!("[group]\nid = \"engine.fns\"\ntitle = \"Engine functions\"\norigin = \"original\"\n{items}"),
+    );
+    with_evidence(
+        r,
+        "kind = \"ledger\"\npath = \"data/implemented.tsv\"\ngroups = [\"engine.fns\"]\n",
+        &format!("address\tsize\tname\tsubsystem\tunit\tstatus\trust\ttyped\n{rows}"),
+    );
+}
+
+#[test]
+fn a_ledger_that_agrees_with_the_catalogue_passes() {
+    covers(&[ids::check::evidence::IMPORT, ids::refs::importers::LEDGER]);
+    let r = Repo::valid();
+    with_ledger(
+        &r,
+        ["translated", "open", "static init (table)"],
+        ["implemented", "missing", "implemented"],
+    );
+    r.passes(&[]);
+}
+
+#[test]
+fn a_ledger_that_says_an_implemented_function_is_open_is_refused() {
+    covers(&[ids::check::evidence::IMPORT, ids::refs::importers::LEDGER]);
+    let r = Repo::valid();
+    with_ledger(
+        &r,
+        ["translated", "open", "traced"],
+        ["implemented", "missing", "implemented"],
+    );
+    let out = r.fails_with("evidence-import");
+    assert!(out.contains("engine.fns.f00401030"), "{out}");
+}
+
+#[test]
+fn a_ledger_that_says_a_missing_function_is_translated_is_refused() {
+    covers(&[ids::check::evidence::IMPORT, ids::refs::importers::LEDGER]);
+    let r = Repo::valid();
+    with_ledger(
+        &r,
+        ["translated", "translated", "static init (table)"],
+        ["implemented", "missing", "implemented"],
+    );
+    let out = r.fails_with("evidence-import");
+    assert!(out.contains("engine.fns.f00401020"), "{out}");
+}
+
+#[test]
+fn a_ledger_naming_a_function_the_catalogue_lacks_is_refused() {
+    covers(&[ids::check::evidence::IMPORT, ids::refs::importers::LEDGER]);
+    let r = Repo::valid();
+    with_ledger(
+        &r,
+        ["translated", "open", "static init (table)"],
+        ["implemented", "missing", "implemented"],
+    );
+    let text = r.read("data/implemented.tsv");
+    r.write(
+        "data/implemented.tsv",
+        &format!("{text}00401040\t8\tExtra\tcore\tunit\topen\t\t\n"),
+    );
+    let out = r.fails_with("evidence-import");
+    assert!(out.contains("engine.fns.f00401040"), "{out}");
+}
+
+#[test]
+fn a_ledger_without_exactly_one_group_is_refused() {
+    covers(&[ids::check::evidence::IMPORT, ids::refs::importers::LEDGER]);
+    let r = Repo::valid();
+    with_evidence(
+        &r,
+        "kind = \"ledger\"\npath = \"data/implemented.tsv\"\n",
+        "address\tstatus\n00401000\ttranslated\n",
+    );
     r.fails_with("evidence-file");
 }
 

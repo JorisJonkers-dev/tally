@@ -10,6 +10,7 @@
 
 use crate::catalogue::{self, Catalogue, Declared, GroupFile};
 use crate::ids::tally_ids_gen as idg;
+use crate::import;
 use crate::refs;
 use crate::results::Results;
 use crate::scan::Scan;
@@ -406,47 +407,26 @@ fn check_evidence_import(cat: &Catalogue, ev: &catalogue::Evidence, out: &mut Ve
         ));
         return;
     }
-    if ev.kind != "tsv" {
-        out.push(Finding::error(
-            "evidence-kind",
-            format!("{at}: unknown importer `{}`", ev.kind),
-        ));
-        return;
-    }
-    let text = match fs::read_to_string(cat.root.join(&ev.path)) {
-        Ok(t) => t,
-        Err(e) => {
-            out.push(Finding::error("evidence-file", format!("{at}: {e}")));
-            return;
-        }
-    };
-    let mut lines = text.lines();
-    let header: Vec<&str> = lines
-        .next()
-        .unwrap_or("")
-        .split('\t')
-        .map(str::trim)
-        .collect();
-    let key_name = ev.key_column.as_deref().unwrap_or("id");
-    let Some(key_col) = header.iter().position(|h| *h == key_name) else {
-        out.push(Finding::error(
-            "evidence-file",
-            format!("{at}: no column `{key_name}`"),
-        ));
-        return;
-    };
-    let status_col = match &ev.status_column {
-        None => None,
-        Some(name) => {
-            if let Some(c) = header.iter().position(|h| h == name) {
-                Some(c)
-            } else {
+    let read: fn(&str, &catalogue::Evidence) -> Result<import::Rows, String> =
+        match ev.kind.as_str() {
+            "tsv" => import::tsv_rows,
+            "ledger" => import::ledger_rows,
+            _ => {
                 out.push(Finding::error(
-                    "evidence-file",
-                    format!("{at}: no column `{name}`"),
+                    "evidence-kind",
+                    format!("{at}: unknown importer `{}`", ev.kind),
                 ));
                 return;
             }
+        };
+    let rows = match fs::read_to_string(cat.root.join(&ev.path))
+        .map_err(|e| e.to_string())
+        .and_then(|text| read(&text, ev))
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            out.push(Finding::error("evidence-file", format!("{at}: {e}")));
+            return;
         }
     };
     let in_scope = |id: &str| {
@@ -454,26 +434,19 @@ fn check_evidence_import(cat: &Catalogue, ev: &catalogue::Evidence, out: &mut Ve
     };
     let mut says = BTreeSet::new();
     let known: BTreeSet<&str> = cat.items().map(|i| i.id.as_str()).collect();
-    for line in lines.filter(|l| !l.trim().is_empty()) {
-        let cells: Vec<&str> = line.split('\t').map(str::trim).collect();
-        let key = cells.get(key_col).copied().unwrap_or("");
-        if !in_scope(key) {
+    for (key, implemented) in rows {
+        if !in_scope(&key) {
             continue;
         }
-        if !known.contains(key) {
+        if !known.contains(key.as_str()) {
             out.push(Finding::error(
                 "evidence-import",
                 format!("{at}: `{key}` is not a catalogue item"),
             ));
             continue;
         }
-        let implemented = status_col.is_none_or(|c| {
-            ev.implemented
-                .iter()
-                .any(|v| Some(v.as_str()) == cells.get(c).copied())
-        });
         if implemented {
-            says.insert(key.to_string());
+            says.insert(key);
         }
     }
     for it in cat
@@ -751,6 +724,13 @@ fn check_settings(cat: &Catalogue, out: &mut Vec<Finding>) {
             format!("catalogue/sources.toml [{}] list", s.id),
             s.list.clone(),
         ));
+        // `refs fetch` writes each upstream file under its cache folder by this path.
+        for path in s.upstream.keys() {
+            paths.push((
+                format!("catalogue/sources.toml [{}] upstream", s.id),
+                path.clone(),
+            ));
+        }
     }
     for g in &cat.groups {
         if let Some(l) = &g.head.items_from {

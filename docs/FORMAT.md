@@ -119,11 +119,30 @@ generator = "catalogue/tally_ids_gen.rs"   # default; "" turns the copy check of
 metadata = "Metadata file"   # titles for reports
 
 [[evidence]]             # an importer whose rows must agree with the declared states
-kind = "tsv"             # ledger, capabilities and contracts are planned
+kind = "tsv"             # tsv or ledger; capabilities and contracts are planned
 path = "data/implemented.tsv"
 key_column = "id"
 status_column = "state"
 implemented = ["done"]
+groups = ["engine.functions"]
+```
+
+Each importer turns its file into rows of an item id and whether it is implemented; `tally check` fails when a row
+names an id the catalogue does not have (within `groups`) and when an item in `groups` is declared implemented or
+partial but the file does not say so, or the other way round.
+
+- `tsv`: `key_column` (default `id`) holds the full item id. With `status_column`, a row is implemented when its
+  value is one of `implemented`; without, every row is.
+- `ledger`: the per-function ledger of nv-rs (`scripts/ledger --tsv <file>`: `address`, `name`, `status`, ...).
+  `groups` names exactly one group, the group of the functions; the item of the function at `00401000` is
+  `<group>.f00401000` (`f` and eight lower-case hex digits). A function is implemented when its `status` is
+  `translated` or `static init (table)` (override with `status_column` and `implemented`; the address column with
+  `key_column`).
+
+```toml
+[[evidence]]
+kind = "ledger"
+path = "target/ledger.tsv"   # written by CI before tally check
 groups = ["engine.functions"]
 ```
 
@@ -138,7 +157,7 @@ tag = "0.29.7"
 commit = "<40 hex digits the tag points to>"
 licence = "GPL-3.0-or-later"
 read = "2026-11-24"              # the date the upstream files were read
-extractor = "manual"             # manual (written by hand from the files below) or tsv
+extractor = "manual"             # manual (written by hand from the files below), tsv or ledger
 list = "ref/libloot.tsv"         # relative to the catalogue directory
 sha256 = "<SHA-256 of the list>"
 
@@ -151,9 +170,16 @@ key_column = "addr"
 title_column = "name"
 where_column = "status"          # optional filter
 where_value = "translated"
+
+[source.ledger]                  # extractor = "ledger" only
+from = "research/engine-map/engine_map.tsv"   # one of the upstream files, with address and name columns
 ```
+
+The `ledger` extractor makes one row per function: key `f` and the address as eight lower-case hex digits, title
+the function's name or, when it has none, its address (`0x00401020`); lines starting with `#` are skipped. With
+`items_from` on the group, every function is an item.
 
 A list is TSV with the header `key<TAB>title`. `tally check` fails when a list's SHA-256 is not its pin, when an
 item refers to a row the list does not have, and when a row has no item (add one with status missing, n/a or
 deferred). `tally refs fetch` downloads the upstream files at the commit (with `curl`), checks their hashes and,
-for `tsv`, builds the list again (`--update` writes it and prints the new pin).
+for `tsv` and `ledger`, builds the list again (`--update` writes it and prints the new pin).

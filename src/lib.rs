@@ -6,6 +6,7 @@ pub mod catalogue;
 pub mod check;
 pub mod cli;
 pub mod doc;
+pub mod import;
 pub mod refs;
 pub mod report;
 pub mod results;

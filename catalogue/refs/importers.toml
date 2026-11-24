@@ -11,9 +11,8 @@ status = "implemented"
 
 [[item]]
 id = "ledger"
-title = "The nv-rs ledger TSV"
-status = "missing"
-notes = "Planned; the importer is a stub with an issue"
+title = "The nv-rs ledger TSV: functions by address as evidence, and as a reference list"
+status = "implemented"
 
 [[item]]
 id = "capabilities"

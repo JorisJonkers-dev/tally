@@ -135,18 +135,18 @@ pub struct DataCases {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Evidence {
-    /// `tsv`; `ledger`, `capabilities` and `contracts` are planned.
+    /// `tsv` or `ledger`; `capabilities` and `contracts` are planned.
     pub kind: String,
     /// The file, relative to the repository root.
     pub path: String,
-    /// The column with the full item id (TSV). Default `id`.
+    /// The column with the full item id (TSV, default `id`), or the function address (ledger, default `address`).
     pub key_column: Option<String>,
-    /// The column with the state (TSV). When absent every row counts as implemented.
+    /// The column with the state. TSV: when absent every row counts as implemented. Ledger: default `status`.
     pub status_column: Option<String>,
-    /// The values of `status_column` that mean implemented.
+    /// The values of `status_column` that mean implemented. Ledger default: `translated`, `static init (table)`.
     #[serde(default)]
     pub implemented: Vec<String>,
-    /// Only these groups are compared; all groups when empty.
+    /// Only these groups are compared; all groups when empty. A ledger names exactly one: the group of the functions.
     #[serde(default)]
     pub groups: Vec<String>,
 }
@@ -174,8 +174,8 @@ pub struct Source {
     pub licence: String,
     /// The date the upstream files were read (YYYY-MM-DD).
     pub read: String,
-    /// How the list is made: `manual` (written by hand from `upstream`), `tsv` (taken from an upstream TSV file);
-    /// `ledger`, `capabilities` and `contracts` are planned.
+    /// How the list is made: `manual` (written by hand from `upstream`), `tsv` (taken from an upstream TSV file),
+    /// `ledger` (one row per function of an nv-rs ledger or engine map); `capabilities` and `contracts` are planned.
     pub extractor: String,
     /// The list, relative to the catalogue directory (`ref/<name>.tsv`).
     pub list: String,
@@ -186,6 +186,8 @@ pub struct Source {
     pub upstream: BTreeMap<String, String>,
     /// For `extractor = "tsv"`: which upstream file and columns.
     pub tsv: Option<TsvExtract>,
+    /// For `extractor = "ledger"`: which upstream file.
+    pub ledger: Option<LedgerExtract>,
     /// Base URL of the raw files; `https://raw.githubusercontent.com/<owner>/<repo>` when absent.
     pub raw: Option<String>,
 }
@@ -200,6 +202,13 @@ pub struct TsvExtract {
     /// Keep only rows whose `where_column` equals `where_value`.
     pub where_column: Option<String>,
     pub where_value: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LedgerExtract {
+    /// The upstream path of the ledger or engine map (one of `upstream`), with `address` and `name` columns.
+    pub from: String,
 }
 
 /// One group file.

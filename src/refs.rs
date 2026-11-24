@@ -3,7 +3,7 @@
 //! commit, the SHA-256 of the upstream files the list was made from, and the SHA-256 of the list itself.
 //!
 //! `refs check` works offline: it hashes the lists. `refs fetch` downloads the pinned upstream files (with `curl`,
-//! so no HTTP crate is needed), checks their hashes and, for `extractor = "tsv"`, makes the list again.
+//! so no HTTP crate is needed), checks their hashes and, for `extractor = "tsv"` and `"ledger"`, makes the list again.
 
 use crate::catalogue::{Catalogue, RefRow, Source, parse_list};
 use crate::check::Finding;
@@ -14,13 +14,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Extractors that exist.
-pub const EXTRACTORS: [&str; 2] = ["manual", "tsv"];
+pub const EXTRACTORS: [&str; 3] = ["manual", "tsv", "ledger"];
 /// Extractors that are planned, each with its issue.
-pub const PLANNED: [(&str, &str); 3] = [
-    (
-        "ledger",
-        "https://github.com/JorisJonkers-dev/tally/issues/3",
-    ),
+pub const PLANNED: [(&str, &str); 2] = [
     (
         "capabilities",
         "https://github.com/JorisJonkers-dev/tally/issues/4",
@@ -124,6 +120,22 @@ pub fn check(cat: &Catalogue) -> (Vec<Finding>, BTreeMap<String, Vec<RefRow>>) {
                     format!(
                         "{at}: tsv.from `{}` is not one of the pinned upstream files",
                         t.from
+                    ),
+                )),
+                Some(_) => {}
+            }
+        }
+        if s.extractor == "ledger" {
+            match &s.ledger {
+                None => out.push(Finding::error(
+                    "extractor-ledger",
+                    format!("{at}: extractor `ledger` needs a [source.ledger] table"),
+                )),
+                Some(l) if !s.upstream.contains_key(&l.from) => out.push(Finding::error(
+                    "extractor-ledger",
+                    format!(
+                        "{at}: ledger.from `{}` is not one of the pinned upstream files",
+                        l.from
                     ),
                 )),
                 Some(_) => {}
@@ -285,9 +297,18 @@ pub fn fetch(
                 ok = false;
             }
         }
-        if let (Some(t), "tsv") = (&s.tsv, s.extractor.as_str()) {
-            let text = fs::read_to_string(dir.join(&t.from)).unwrap_or_default();
-            match extract_tsv(&text, t) {
+        let made = match (s.extractor.as_str(), &s.tsv, &s.ledger) {
+            ("tsv", Some(t), _) => Some(extract_tsv(
+                &fs::read_to_string(dir.join(&t.from)).unwrap_or_default(),
+                t,
+            )),
+            ("ledger", _, Some(l)) => Some(crate::import::ledger_list(
+                &fs::read_to_string(dir.join(&l.from)).unwrap_or_default(),
+            )),
+            _ => None,
+        };
+        if let Some(made) = made {
+            match made {
                 Ok(list) => {
                     let hash = sha256::hex(list.as_bytes());
                     if hash == s.sha256 {
