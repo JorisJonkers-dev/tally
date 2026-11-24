@@ -436,6 +436,38 @@ fn refs_fetch_rebuilds_a_tsv_list_and_writes_it_with_update() {
 }
 
 #[test]
+fn refs_fetch_rebuilds_a_ledger_list_and_writes_it_with_update() {
+    covers(&[ids::cmd::cli::REFS_FETCH, ids::refs::importers::LEDGER]);
+    let r = Repo::valid();
+    let url = upstream(&r);
+    let map = "# FalloutNV.exe\naddress\tsize\tname\n00401020\t10\t\n00401000\t21\tFoo\n";
+    r.write(
+        "upstream/0123456789abcdef0123456789abcdef01234567/engine_map.tsv",
+        map,
+    );
+    let text = r
+        .read("catalogue/sources.toml")
+        .replace("extractor = \"manual\"", "extractor = \"ledger\"");
+    let text = text.replace(
+        "[source.upstream]",
+        &format!(
+            "raw = \"{url}\"\n\n[source.upstream]\n\"engine_map.tsv\" = \"{}\"",
+            sha(map)
+        ),
+    );
+    r.write(
+        "catalogue/sources.toml",
+        &format!("{text}\n[source.ledger]\nfrom = \"engine_map.tsv\"\n"),
+    );
+    let cache = r.path("cache").to_string_lossy().into_owned();
+    let (code, out, _) = r.tally(&["refs", "fetch", "--cache", &cache, "--update"]);
+    assert_eq!(code, 0, "{out}");
+    let list = "key\ttitle\nf00401000\tFoo\nf00401020\t0x00401020\n";
+    assert_eq!(r.read("catalogue/ref/up.tsv"), list);
+    assert!(out.contains(&sha(list)), "{out}");
+}
+
+#[test]
 fn refs_fetch_of_an_unknown_source_fails() {
     covers(&[ids::cmd::cli::REFS_FETCH]);
     let r = Repo::valid();
