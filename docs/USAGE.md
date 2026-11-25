@@ -22,7 +22,7 @@ add it to a repository, and how to work on it.
   without `retired` or an alias and a retired id stays retired; with `--ratchet`, the covered and tagged counts do
   not drop (unless `--allow-drop`). Warnings: tags in ignored tests, new implemented items without a tag.
 - **Reports**: `--depth 1` areas, `2` groups, `3` items with their tests; `term`, `md`, `json`
-  (`tally-report.v1`) or `svg` (one stacked bar per area and for the headline: covered, passing, tagged, implemented and missing, with the count of each); `--missing`, `--origin original|ours`;
+  (`tally-report.v1`) or `svg` (one stacked bar per area and for the headline, in plain words: tested on all OSes (covered), tested on some OSes (passing), has a test (tagged), built (implemented) and not built yet (missing), with the count of each; the JSON keeps the state names); `--missing`, `--origin original|ours`;
   `[report]` in `tally.toml` hides the first row or leaves large areas out of it (docs/FORMAT.md).
 
 ## Commands

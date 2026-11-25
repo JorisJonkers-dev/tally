@@ -21,7 +21,7 @@ status = "implemented"
 
 [[item]]
 id = "svg"
-title = "SVG with one stacked bar per area: covered, passing, tagged, implemented and missing"
+title = "SVG with one stacked bar per area, in plain words: tested on all OSes, tested on some OSes, has a test, built, not built yet"
 status = "implemented"
 
 [[item]]

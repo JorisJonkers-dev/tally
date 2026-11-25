@@ -488,7 +488,7 @@ fn md(r: &Report, o: &Options) -> String {
     };
     let _ = writeln!(
         s,
-        "| | Implemented | Tagged | Passing | Covered | Missing | Gated | n/a, deferred |{head}"
+        "| | Built | Has a test | Tested on some OSes | Tested on all OSes | Not built yet | Needs the game to test | Not needed |{head}"
     );
     let _ = writeln!(
         s,
@@ -553,7 +553,7 @@ fn md(r: &Report, o: &Options) -> String {
     if !shares.is_empty() {
         let _ = writeln!(
             s,
-            "\n| Average share | {} | {} | Items |",
+            "\n| Average share | {} | {} | Features |",
             md_escape(&capital(&r.share_label)),
             md_escape(&capital(&r.works_label))
         );
@@ -576,7 +576,7 @@ fn md(r: &Report, o: &Options) -> String {
                     continue;
                 }
                 let _ = writeln!(s, "\n### {} (`{}`)\n", md_escape(&g.title), g.id);
-                let _ = writeln!(s, "| Item | Id | State | Tests |");
+                let _ = writeln!(s, "| Feature | Id | State | Tests |");
                 let _ = writeln!(s, "| --- | --- | --- | --- |");
                 for it in &g.items {
                     let tests = it
@@ -585,7 +585,7 @@ fn md(r: &Report, o: &Options) -> String {
                         .map(|t| format!("`{t}`"))
                         .collect::<Vec<_>>()
                         .join(", ");
-                    let mut state = it.state.as_str().to_string();
+                    let mut state = plain_state(it.state).to_string();
                     if it.works {
                         let _ = write!(state, " ({})", r.works_label);
                     }
@@ -605,6 +605,20 @@ fn md(r: &Report, o: &Options) -> String {
         }
     }
     s
+}
+
+/// An item's state in plain words, as the Markdown report shows it (the JSON keeps the state names).
+fn plain_state(s: State) -> &'static str {
+    match s {
+        State::Missing => "not built yet",
+        State::Implemented => "built",
+        State::Tagged => "has a test",
+        State::Passing => "tested on some OSes",
+        State::Covered => "tested on all OSes",
+        State::Gated => "needs the game to test",
+        State::NotApplicable | State::Deferred => "not needed",
+        State::Retired => "retired",
+    }
 }
 
 fn xml(s: &str) -> String {
@@ -680,12 +694,12 @@ fn gap_line(a: &AreaRow) -> Option<String> {
     gap_line_of(&ids)
 }
 
-/// `gaps: ` and the ids, as many as fit in `GAP_CHARS` characters, then how many more there are.
+/// `not built yet: ` and the ids, as many as fit in `GAP_CHARS` characters, then how many more there are.
 fn gap_line_of(ids: &[&str]) -> Option<String> {
     if ids.is_empty() {
         return None;
     }
-    let mut line = String::from("gaps: ");
+    let mut line = String::from("not built yet: ");
     for (n, id) in ids.iter().enumerate() {
         let rest = ids.len() - n;
         let more = format!(" and {rest} more");
@@ -720,7 +734,7 @@ fn headline_title(r: &Report, h: &Headline) -> String {
                 .map_or(id.as_str(), |a| a.title.as_str())
         })
         .collect();
-    format!("All areas · not counting {}", names.join(", "))
+    format!("All areas · {} not counted", names.join(", "))
 }
 
 /// The segments of one bar, from the most done to the least, each with its own count (not the running total):
@@ -825,7 +839,7 @@ fn share_bar(
         );
         x += w + 18;
     }
-    let note = format!("average over {} items", thousands(sh.items));
+    let note = format!("average over {} features", thousands(sh.items));
     if x + text_px(note.chars().count(), CHAR_11) > 780 {
         legend_y += 16;
     }
@@ -847,7 +861,7 @@ fn svg(r: &Report) -> String {
     let mut labels = Vec::new();
     let _ = writeln!(
         body,
-        "  <text x=\"20\" y=\"{y}\" {FONT} font-size=\"15\" fill=\"{AMBER}\">{} · FEATURE CATALOGUE</text>",
+        "  <text x=\"20\" y=\"{y}\" {FONT} font-size=\"15\" fill=\"{AMBER}\">{} · FEATURES</text>",
         xml(&r.repo.to_uppercase())
     );
     let rows = r
@@ -865,13 +879,13 @@ fn svg(r: &Report) -> String {
         clip += 1;
         y += 28;
         labels.push(format!(
-            "{title}: {} items, {} tagged, {} passing, {} covered",
+            "{title}: {} features, {} have a test, {} tested on some OSes, {} tested on all OSes",
             c.total, c.tagged, c.passing, c.covered
         ));
         let counts = format!(
-            "{} {} · {} covered",
+            "{} {} · {} tested on all OSes",
             thousands(c.total),
-            if c.total == 1 { "item" } else { "items" },
+            if c.total == 1 { "feature" } else { "features" },
             percent(c.covered, c.total)
         );
         // The title ends at least 20 px before the right-aligned counts start.
@@ -922,11 +936,11 @@ fn svg(r: &Report) -> String {
         let mut legend_y = bar_y + 28;
         let mut x = 20;
         let entries = [
-            (AMBER, c.covered, "covered on all 3 systems"),
-            (PASSING, c.passing, "passing on any system"),
-            (PALE, c.tagged, "tagged"),
-            (BUILT, c.implemented, "implemented"),
-            (TRACK, c.missing, "missing"),
+            (AMBER, c.covered, "tested on all OSes"),
+            (PASSING, c.passing, "tested on some OSes"),
+            (PALE, c.tagged, "have a test"),
+            (BUILT, c.implemented, "built"),
+            (TRACK, c.missing, "not built yet"),
         ];
         let works_text = format!("of them: {}", r.works_label);
         let works_entry = [(WORKS, c.works, works_text.as_str())];
@@ -955,10 +969,10 @@ fn svg(r: &Report) -> String {
         if left_out > 0 || c.gated > 0 {
             let mut note = Vec::new();
             if c.gated > 0 {
-                note.push(format!("{} gated", thousands(c.gated)));
+                note.push(format!("{} need the game to test", thousands(c.gated)));
             }
             if left_out > 0 {
-                note.push(format!("{} n/a or deferred", thousands(left_out)));
+                note.push(format!("{} not needed", thousands(left_out)));
             }
             let note = note.join(" · ");
             // The note goes on its own line when it would run into the legend.
@@ -987,9 +1001,9 @@ fn svg(r: &Report) -> String {
     }
     y += 26;
     let foot = if r.results {
-        "covered: a tagged test passed on Linux, Windows and macOS"
+        "Tested on all OSes: a test for it passed on Linux, Windows and macOS"
     } else {
-        "no test results given: nothing is passing or covered yet"
+        "No test results yet: nothing counts as tested"
     };
     let _ = writeln!(
         body,
@@ -1045,7 +1059,7 @@ mod tests {
         let ids = ["x".repeat(200), "short".to_string()];
         let line =
             gap_line_of(&ids.iter().map(String::as_str).collect::<Vec<_>>()).expect("a line");
-        assert!(line.starts_with("gaps: xxx"), "{line}");
+        assert!(line.starts_with("not built yet: xxx"), "{line}");
         assert!(line.ends_with("…, short"), "{line}");
         assert!(line.chars().count() <= GAP_CHARS, "{line}");
     }
