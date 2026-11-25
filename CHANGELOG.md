@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/JorisJonkers-dev/tally/compare/v0.5.0...v0.6.0) (2026-11-25)
+
+
+### Features
+
+* **report:** one stacked bar per area with covered, passing, tagged, implemented and missing ([#19](https://github.com/JorisJonkers-dev/tally/issues/19)) ([380abeb](https://github.com/JorisJonkers-dev/tally/commit/380abeb849f5064ab7e7336940ea190edbca336b))
+
 ## [0.5.0](https://github.com/JorisJonkers-dev/tally/compare/v0.4.0...v0.5.0) (2026-11-25)
 
 
