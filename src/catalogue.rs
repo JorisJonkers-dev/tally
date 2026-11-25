@@ -95,6 +95,13 @@ pub struct ReportSettings {
     /// They keep their own row, and `totals` in the JSON (which the ratchet reads) still counts them.
     #[serde(default)]
     pub leave_out_of_total: Vec<String>,
+    /// How reports name the items (and the share) that work another way (evidence `works`).
+    #[serde(default = "works_label")]
+    pub works_label: String,
+    /// How reports name the done part of a share (evidence `share_column`): the second bar reads
+    /// "`share_label` share" and "N% `share_label` on average".
+    #[serde(default = "share_label")]
+    pub share_label: String,
 }
 
 impl Default for ReportSettings {
@@ -102,8 +109,18 @@ impl Default for ReportSettings {
         ReportSettings {
             total: true,
             leave_out_of_total: Vec::new(),
+            works_label: works_label(),
+            share_label: share_label(),
         }
     }
+}
+
+fn works_label() -> String {
+    "works another way".into()
+}
+
+fn share_label() -> String {
+    "done".into()
 }
 
 fn yes() -> bool {
@@ -189,6 +206,13 @@ pub struct Evidence {
     /// Only these groups are compared; all groups when empty. A ledger names exactly one: the group of the functions.
     #[serde(default)]
     pub groups: Vec<String>,
+    /// TSV only: the values of `status_column` that mean the item is not implemented but works another way (for
+    /// example through a fallback). Reports show such items as their own segment; they still count as missing.
+    #[serde(default)]
+    pub works: Vec<String>,
+    /// TSV only: a column with each item's share as `done/works/total` (whole units, such as functions): how many
+    /// units are done, how many more work another way, out of how many. Reports show the average share of an area.
+    pub share_column: Option<String>,
 }
 
 /// `catalogue/sources.toml`.

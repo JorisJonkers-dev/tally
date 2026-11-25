@@ -267,6 +267,84 @@ pub fn tsv_rows(text: &str, ev: &Evidence) -> Result<Rows, String> {
         .collect())
 }
 
+/// An item's share from a `share_column`: `done` units done and `works` more that work another way, out of `total`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Share {
+    pub done: u64,
+    pub works: u64,
+    pub total: u64,
+}
+
+/// What a `tsv` evidence row says beyond implemented: whether the item works another way (its state is one of
+/// `works`), and its share.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Extent {
+    pub works: bool,
+    pub share: Option<Share>,
+}
+
+/// `done/works/total` with `total` above 0 and `done + works` at most `total`.
+fn share(text: &str) -> Result<Share, String> {
+    let parts: Vec<&str> = text.split('/').collect();
+    let [d, w, t] = parts.as_slice() else {
+        return Err(format!("share `{text}` is not done/works/total"));
+    };
+    let num = |s: &str| {
+        s.parse::<u64>()
+            .map_err(|_| format!("share `{text}`: `{s}` is not a whole number"))
+    };
+    let (done, works, total) = (num(d)?, num(w)?, num(t)?);
+    if total == 0 || done.checked_add(works).is_none_or(|sum| sum > total) {
+        return Err(format!(
+            "share `{text}`: done and works must add up to at most a total above 0"
+        ));
+    }
+    Ok(Share { done, works, total })
+}
+
+/// The extents of a `tsv` evidence file, by full item id: only rows that work another way or have a share. Empty
+/// when the evidence sets neither `works` nor `share_column`.
+///
+/// # Errors
+/// When a named column is missing, a value is both in `implemented` and `works`, a share is malformed, or an id is
+/// listed twice.
+pub fn tsv_extents(text: &str, ev: &Evidence) -> Result<BTreeMap<String, Extent>, String> {
+    let mut out = BTreeMap::new();
+    if ev.works.is_empty() && ev.share_column.is_none() {
+        return Ok(out);
+    }
+    if let Some(v) = ev.works.iter().find(|v| ev.implemented.contains(v)) {
+        return Err(format!("`{v}` is listed in both `implemented` and `works`"));
+    }
+    let t = Table::read(text)?;
+    let key = t.column(ev.key_column.as_deref().unwrap_or("id"))?;
+    let status = match (&ev.status_column, ev.works.is_empty()) {
+        (Some(c), _) => Some(t.column(c)?),
+        (None, false) => return Err("`works` needs a `status_column`".into()),
+        (None, true) => None,
+    };
+    let col = ev
+        .share_column
+        .as_deref()
+        .map(|c| t.column(c))
+        .transpose()?;
+    for r in &t.rows {
+        let works = status.is_some_and(|c| ev.works.iter().any(|v| v == cell(r, c)));
+        let share = match col.map(|c| cell(r, c)) {
+            None | Some("") => None,
+            Some(v) => Some(share(v)?),
+        };
+        if !works && share.is_none() {
+            continue;
+        }
+        let id = cell(r, key).to_string();
+        if out.insert(id.clone(), Extent { works, share }).is_some() {
+            return Err(format!("`{id}` is listed twice"));
+        }
+    }
+    Ok(out)
+}
+
 /// The rows of an nv-rs ledger: one per function, `<group>.f<address>`, implemented when its `status` (or
 /// `status_column`) is one of `implemented` (default: translated, static init (table)). The address is read from
 /// `key_column` (default `address`). The evidence names exactly one group.

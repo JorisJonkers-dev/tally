@@ -693,3 +693,200 @@ fn leaving_out_an_area_the_catalogue_does_not_have_is_an_error() {
     let out = r.fails_with("settings");
     assert!(out.contains("`engine`"), "{out}");
 }
+
+/// The valid repository with an evidence file whose rows say which missing items work another way and what share
+/// of each item is done.
+fn with_extents() -> Repo {
+    let r = Repo::valid();
+    r.write(
+        "evidence.tsv",
+        "id\tstate\tshare\n\
+         cond.func.file\timplemented\t3/0/3\n\
+         cond.func.active\timplemented\t1/1/2\n\
+         ours.extra.speed\tfallback\t1/2/4\n",
+    );
+    let settings = r.read("catalogue/tally.toml");
+    r.write(
+        "catalogue/tally.toml",
+        &format!(
+            "{settings}\n[report]\nworks_label = \"works via the old code\"\nshare_label = \"native\"\n\n\
+             [[evidence]]\nkind = \"tsv\"\npath = \"evidence.tsv\"\nstatus_column = \"state\"\n\
+             implemented = [\"implemented\"]\nworks = [\"fallback\"]\nshare_column = \"share\"\n\
+             groups = [\"cond.func\", \"ours.extra\"]\n"
+        ),
+    );
+    r
+}
+
+#[test]
+fn a_catalogue_with_works_rows_and_shares_passes_the_check() {
+    covers(&[ids::check::evidence::WORKS_SHARE]);
+    with_extents().passes(&[]);
+}
+
+#[test]
+fn a_malformed_share_or_works_on_another_importer_fails_the_check() {
+    covers(&[ids::check::evidence::WORKS_SHARE]);
+    let r = with_extents();
+    r.edit("evidence.tsv", "1/2/4", "3/2/4");
+    r.fails_with("evidence-file");
+    let r = with_extents();
+    r.edit(
+        "catalogue/tally.toml",
+        "kind = \"tsv\"",
+        "kind = \"contracts\"",
+    );
+    r.fails_with("evidence-kind");
+}
+
+#[test]
+fn a_share_of_huge_totals_averages_without_overflow() {
+    covers(&[
+        ids::report::format::SHARE,
+        ids::check::evidence::WORKS_SHARE,
+    ]);
+    let r = with_extents();
+    let max = u64::MAX;
+    r.edit("evidence.tsv", "1/2/4", &format!("{}/0/{max}", max / 2));
+    let out = report(&r, &["--format", "json"]);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["areas"][1]["share"]["done"], 0.5, "{out}");
+}
+
+#[test]
+fn two_evidence_files_that_give_one_item_a_share_are_an_error() {
+    covers(&[ids::report::format::SHARE]);
+    let r = with_extents();
+    r.write(
+        "second.tsv",
+        "id\tstate\tshare\nours.extra.speed\tfallback\t1/2/4\n",
+    );
+    let settings = r.read("catalogue/tally.toml");
+    r.write(
+        "catalogue/tally.toml",
+        &format!(
+            "{settings}\n[[evidence]]\nkind = \"tsv\"\npath = \"second.tsv\"\nstatus_column = \"state\"\n\
+             implemented = [\"implemented\"]\nworks = [\"fallback\"]\nshare_column = \"share\"\n\
+             groups = [\"ours.extra\"]\n"
+        ),
+    );
+    let (code, out, err) = r.tally(&["report"]);
+    assert_ne!(code, 0, "{out}{err}");
+    assert!(err.contains("another evidence file"), "{err}");
+}
+
+#[test]
+fn the_json_report_counts_items_that_work_another_way_and_averages_shares() {
+    covers(&[ids::report::format::WORKS, ids::report::format::SHARE]);
+    let out = report(&with_extents(), &["--format", "json", "--depth", "3"]);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let ours = &v["areas"][1];
+    assert_eq!(ours["id"], "ours");
+    assert_eq!(ours["counts"]["works"], 1);
+    assert_eq!(ours["counts"]["missing"], 1);
+    // speed: 1 of 4 done, 2 more work; the n/a item has no share.
+    assert_eq!(ours["share"]["items"], 1);
+    assert_eq!(ours["share"]["done"], 0.25);
+    assert_eq!(ours["share"]["works"], 0.5);
+    // Conditions: 3/3 and 1/2 done average to 75%, each item counting once.
+    assert_eq!(v["areas"][0]["share"]["done"], 0.75);
+    assert_eq!(v["areas"][0]["share"]["works"], 0.25);
+    assert_eq!(v["totals"]["works"], 1);
+    let speed = &ours["groups"][0]["items"][0];
+    assert_eq!(speed["works"], true);
+    assert_eq!(speed["share"]["total"], 4);
+}
+
+#[test]
+fn a_report_without_works_rows_or_shares_has_no_such_fields() {
+    covers(&[ids::report::format::WORKS, ids::report::format::SHARE]);
+    let out = report(&Repo::valid(), &["--format", "json", "--depth", "3"]);
+    assert!(
+        !out.contains("\"works\"") && !out.contains("\"share\""),
+        "{out}"
+    );
+    let md = report(&Repo::valid(), &["--format", "md"]);
+    assert!(!md.contains("Average share"), "{md}");
+    let svg = report(&Repo::valid(), &["--format", "svg"]);
+    assert!(!svg.contains("#4f6472"), "{svg}");
+}
+
+#[test]
+fn the_svg_report_draws_works_items_and_a_share_bar() {
+    covers(&[
+        ids::report::format::SVG,
+        ids::report::format::WORKS,
+        ids::report::format::SHARE,
+    ]);
+    let out = report(&with_extents(), &["--format", "svg"]);
+    // The works segment and its legend entry, after the missing count it is part of.
+    assert!(out.contains("fill=\"#4f6472\" clip-path"), "{out}");
+    assert!(out.contains(">1 missing</text>"), "{out}");
+    assert!(
+        out.contains(">1 of them: works via the old code</text>"),
+        "{out}"
+    );
+    // A missing item that works another way is not a gap.
+    assert!(!out.contains("gaps: ours.extra.speed"), "{out}");
+    // A second bar for each area with shares.
+    assert!(out.contains(">Conditions · native share</text>"), "{out}");
+    assert!(out.contains(">75.0% native on average</text>"), "{out}");
+    assert!(
+        out.contains(">25.0% works via the old code</text>"),
+        "{out}"
+    );
+    assert!(
+        out.contains(">50.0% works via the old code</text>"),
+        "{out}"
+    );
+    assert!(out.contains(">25.0% neither</text>"), "{out}");
+    assert!(out.contains(">average over 2 items</text>"), "{out}");
+    // Clip paths stay unique.
+    let mut ids: Vec<&str> = out
+        .match_indices("clipPath id=\"")
+        .map(|(i, _)| &out[i + 14..i + 18])
+        .collect();
+    let n = ids.len();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), n, "{out}");
+    assert_eq!(out, report(&with_extents(), &["--format", "svg"]));
+}
+
+#[test]
+fn the_markdown_and_terminal_reports_show_works_and_shares() {
+    covers(&[
+        ids::report::format::MD,
+        ids::report::format::TERM,
+        ids::report::format::WORKS,
+        ids::report::format::SHARE,
+    ]);
+    let r = with_extents();
+    let md = report(&r, &["--format", "md", "--depth", "3"]);
+    assert!(
+        md.contains("| n/a, deferred | Works via the old code |"),
+        "{md}"
+    );
+    assert!(
+        md.contains("| **ours** | 0/1 | 0 | 0 | 0 | 1 | 0 | 1 | 1 |"),
+        "{md}"
+    );
+    assert!(
+        md.contains("| Average share | Native | Works via the old code | Items |"),
+        "{md}"
+    );
+    assert!(
+        md.contains("| **Conditions** | 75.0% | 25.0% | 2 |"),
+        "{md}"
+    );
+    assert!(
+        md.contains("| missing (works via the old code), 1/4 native |"),
+        "{md}"
+    );
+    let term = report(&r, &[]);
+    assert!(
+        term.contains("share: 25.0% native on average, 50.0% works via the old code (1 items)"),
+        "{term}"
+    );
+    assert!(term.contains("1 works via the old code"), "{term}");
+}

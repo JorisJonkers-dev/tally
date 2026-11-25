@@ -170,6 +170,14 @@ pub struct Counts {
     pub gated: usize,
     pub not_applicable: usize,
     pub deferred: usize,
+    /// Missing items that work another way (evidence `works`); they stay in `missing` too.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub works: usize,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 impl Counts {

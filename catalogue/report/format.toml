@@ -43,3 +43,13 @@ status = "implemented"
 id = "headline"
 title = "report.total and report.leave_out_of_total pick what the first row counts"
 status = "implemented"
+
+[[item]]
+id = "works"
+title = "Missing items that work another way (evidence works) get their own segment, count and Markdown column"
+status = "implemented"
+
+[[item]]
+id = "share"
+title = "An area whose items have shares gets a second bar: the average done share and the share that works another way"
+status = "implemented"

@@ -414,10 +414,20 @@ fn check_evidence_import(cat: &Catalogue, ev: &catalogue::Evidence, out: &mut Ve
                 return;
             }
         };
+    if ev.kind != "tsv" && (!ev.works.is_empty() || ev.share_column.is_some()) {
+        out.push(Finding::error(
+            "evidence-kind",
+            format!("{at}: `works` and `share_column` are for the tsv importer only"),
+        ));
+    }
     let rows = match fs::read_to_string(cat.root.join(&ev.path))
         .map_err(|e| e.to_string())
-        .and_then(|text| read(&text, ev))
-    {
+        .and_then(|text| {
+            if ev.kind == "tsv" {
+                import::tsv_extents(&text, ev)?;
+            }
+            read(&text, ev)
+        }) {
         Ok(rows) => rows,
         Err(e) => {
             out.push(Finding::error("evidence-file", format!("{at}: {e}")));
