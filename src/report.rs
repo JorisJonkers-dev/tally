@@ -86,7 +86,12 @@ pub struct ShareRow {
 
 impl ShareRow {
     fn add(&mut self, s: Share) {
-        let ppm = |part: u64| (part * 1_000_000 + s.total / 2) / s.total;
+        // In u128: a part of up to u64::MAX units times a million does not fit in u64. The result is at most a
+        // million (part <= total), so it fits again.
+        #[allow(clippy::cast_possible_truncation)]
+        let ppm = |part: u64| {
+            ((u128::from(part) * 1_000_000 + u128::from(s.total) / 2) / u128::from(s.total)) as u64
+        };
         self.items += 1;
         self.done_ppm += ppm(s.done);
         self.works_ppm += ppm(s.works);
@@ -175,8 +180,11 @@ pub fn extents(cat: &Catalogue) -> Result<BTreeMap<String, Extent>, String> {
         for (id, x) in crate::import::tsv_extents(&text, ev)
             .map_err(|e| format!("evidence {}: {e}", ev.path))?
         {
-            if in_scope(&id) {
-                out.insert(id, x);
+            if in_scope(&id) && out.insert(id.clone(), x).is_some() {
+                return Err(format!(
+                    "evidence {}: `{id}` already has a works state or share from another evidence file",
+                    ev.path
+                ));
             }
         }
     }

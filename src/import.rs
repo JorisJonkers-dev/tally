@@ -294,7 +294,7 @@ fn share(text: &str) -> Result<Share, String> {
             .map_err(|_| format!("share `{text}`: `{s}` is not a whole number"))
     };
     let (done, works, total) = (num(d)?, num(w)?, num(t)?);
-    if total == 0 || done + works > total {
+    if total == 0 || done.checked_add(works).is_none_or(|sum| sum > total) {
         return Err(format!(
             "share `{text}`: done and works must add up to at most a total above 0"
         ));

@@ -159,7 +159,9 @@ fn tsv_extents_are_empty_without_works_or_a_share_column() {
 fn malformed_shares_and_overlapping_states_are_errors() {
     covers(&[ids::check::evidence::WORKS_SHARE]);
     let bad = |share: &str| format!("id\tstate\tshare\na.b.x\tmissing\t{share}\n");
-    for share in ["1/2", "a/0/1", "1/0/0", "2/2/3", "1/1/1/1"] {
+    let max = u64::MAX;
+    let wraps = format!("{max}/{max}/{max}");
+    for share in ["1/2", "a/0/1", "1/0/0", "2/2/3", "1/1/1/1", wraps.as_str()] {
         assert!(tsv_extents(&bad(share), &tsv_ev()).is_err(), "{share}");
     }
     let both = Evidence {

@@ -740,6 +740,42 @@ fn a_malformed_share_or_works_on_another_importer_fails_the_check() {
 }
 
 #[test]
+fn a_share_of_huge_totals_averages_without_overflow() {
+    covers(&[
+        ids::report::format::SHARE,
+        ids::check::evidence::WORKS_SHARE,
+    ]);
+    let r = with_extents();
+    let max = u64::MAX;
+    r.edit("evidence.tsv", "1/2/4", &format!("{}/0/{max}", max / 2));
+    let out = report(&r, &["--format", "json"]);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["areas"][1]["share"]["done"], 0.5, "{out}");
+}
+
+#[test]
+fn two_evidence_files_that_give_one_item_a_share_are_an_error() {
+    covers(&[ids::report::format::SHARE]);
+    let r = with_extents();
+    r.write(
+        "second.tsv",
+        "id\tstate\tshare\nours.extra.speed\tfallback\t1/2/4\n",
+    );
+    let settings = r.read("catalogue/tally.toml");
+    r.write(
+        "catalogue/tally.toml",
+        &format!(
+            "{settings}\n[[evidence]]\nkind = \"tsv\"\npath = \"second.tsv\"\nstatus_column = \"state\"\n\
+             implemented = [\"implemented\"]\nworks = [\"fallback\"]\nshare_column = \"share\"\n\
+             groups = [\"ours.extra\"]\n"
+        ),
+    );
+    let (code, out, err) = r.tally(&["report"]);
+    assert_ne!(code, 0, "{out}{err}");
+    assert!(err.contains("another evidence file"), "{err}");
+}
+
+#[test]
 fn the_json_report_counts_items_that_work_another_way_and_averages_shares() {
     covers(&[ids::report::format::WORKS, ids::report::format::SHARE]);
     let out = report(&with_extents(), &["--format", "json", "--depth", "3"]);
