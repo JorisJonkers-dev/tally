@@ -186,7 +186,7 @@ partial but the file does not say so, or the other way round.
   - `works = ["fallback"]`: values of `status_column` that mean the item is not implemented but works another way
     (through a fallback, or the original program's own code). Such an item stays missing everywhere (bars, totals,
     the ratchet, the check), and reports also count it as `works`: a grey-blue segment after the implemented ones,
-    a legend entry "N of them <works_label>", a Markdown column, `counts.works` and the item's `works` in the JSON.
+    a legend entry "N of them: <works_label>", a Markdown column, `counts.works` and the item's `works` in the JSON.
     It is not listed as a gap. A value in both `implemented` and `works` is an error; `works` needs `status_column`.
   - `share_column = "share"`: a column with each item's share as `done/works/total` in whole units (for example
     functions): `done` units are done, `works` more work another way, out of `total` (above 0; `done + works` at

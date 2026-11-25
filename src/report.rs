@@ -353,9 +353,9 @@ fn bar(part: usize, total: usize, width: usize) -> String {
     format!("{}{}", "#".repeat(filled), ".".repeat(width - filled))
 }
 
-fn line(c: &Counts) -> String {
+fn line(c: &Counts, works_label: &str) -> String {
     let works = if c.works > 0 {
-        format!("  {:>4} works another way", c.works)
+        format!("  {:>4} {works_label}", c.works)
     } else {
         String::new()
     };
@@ -415,15 +415,25 @@ fn term(r: &Report, o: &Options) -> String {
         .unwrap_or(4)
         .max(5);
     if let Some(h) = &r.headline {
-        let _ = writeln!(s, "{:width$}  {}", term_total(h), line(&h.counts));
+        let _ = writeln!(
+            s,
+            "{:width$}  {}",
+            term_total(h),
+            line(&h.counts, &r.works_label)
+        );
     }
     for a in &r.areas {
-        let _ = writeln!(s, "{:width$}  {}", a.id, line(&a.counts));
+        let _ = writeln!(s, "{:width$}  {}", a.id, line(&a.counts, &r.works_label));
         if let Some(sh) = &a.share {
             let _ = writeln!(s, "{:width$}  {}", "", share_line(r, sh));
         }
         for g in &a.groups {
-            let _ = writeln!(s, "{:width$}  {}", format!("  {}", g.id), line(&g.counts));
+            let _ = writeln!(
+                s,
+                "{:width$}  {}",
+                format!("  {}", g.id),
+                line(&g.counts, &r.works_label)
+            );
             for it in &g.items {
                 let tests = if it.tests.is_empty() {
                     String::new()
@@ -918,7 +928,7 @@ fn svg(r: &Report) -> String {
             (BUILT, c.implemented, "implemented"),
             (TRACK, c.missing, "missing"),
         ];
-        let works_text = format!("of them {}", r.works_label);
+        let works_text = format!("of them: {}", r.works_label);
         let works_entry = [(WORKS, c.works, works_text.as_str())];
         let works_entry: &[(&str, usize, &str)] = if c.works > 0 { &works_entry } else { &[] };
         for &(colour, count, name) in entries.iter().chain(works_entry) {

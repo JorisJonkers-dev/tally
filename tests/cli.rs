@@ -823,7 +823,7 @@ fn the_svg_report_draws_works_items_and_a_share_bar() {
     assert!(out.contains("fill=\"#4f6472\" clip-path"), "{out}");
     assert!(out.contains(">1 missing</text>"), "{out}");
     assert!(
-        out.contains(">1 of them works via the old code</text>"),
+        out.contains(">1 of them: works via the old code</text>"),
         "{out}"
     );
     // A missing item that works another way is not a gap.
@@ -888,5 +888,5 @@ fn the_markdown_and_terminal_reports_show_works_and_shares() {
         term.contains("share: 25.0% native on average, 50.0% works via the old code (1 items)"),
         "{term}"
     );
-    assert!(term.contains("1 works another way"), "{term}");
+    assert!(term.contains("1 works via the old code"), "{term}");
 }
