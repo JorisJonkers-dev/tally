@@ -13,7 +13,7 @@ both and draws how far along the project is: built, tested, and passing on Linux
 The picture for [loot-rs](https://github.com/JorisJonkers-dev/loot-rs), redrawn on every change to its main branch:
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JorisJonkers-dev/loot-rs/main/docs/coverage/tally.svg" alt="loot-rs feature catalogue: implemented and covered per area" width="100%">
+  <img src="https://raw.githubusercontent.com/JorisJonkers-dev/loot-rs/main/docs/coverage/tally.svg" alt="loot-rs feature catalogue: items, tagged, passing and covered per area" width="100%">
 </p>
 
 ## Why it helps
