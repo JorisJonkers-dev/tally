@@ -255,7 +255,7 @@ fn the_markdown_report_has_a_row_per_group_and_item_tables() {
     );
     assert!(
         out.contains(
-            "| `file(path)` | `cond.func.file` | tagged | `src/lib.rs::file_finds_a_file` |"
+            "| `file(path)` | `cond.func.file` | has a test | `src/lib.rs::file_finds_a_file` |"
         ),
         "{out}"
     );
@@ -268,29 +268,38 @@ fn the_svg_report_is_a_dark_panel_with_a_bar_per_area_and_its_counts() {
     let out = report(&r, &["--format", "svg"]);
     assert!(out.starts_with("<svg"), "{out}");
     assert!(out.contains("fill=\"#14110b\""), "{out}");
-    assert!(out.contains("DEMO · FEATURE CATALOGUE"), "{out}");
+    assert!(out.contains("DEMO · FEATURES"), "{out}");
     // One track per row: all areas, Conditions, ours.
     assert_eq!(out.matches("fill=\"#2b2418\"/>").count(), 3, "{out}");
-    assert!(out.contains(">3 items · 0.0% covered</text>"), "{out}");
+    assert!(
+        out.contains(">3 features · 0.0% tested on all OSes</text>"),
+        "{out}"
+    );
     // The legend gives each state's count; each takes in the states before it.
     for text in [
-        ">0 covered on all 3 systems</text>",
-        ">0 passing on any system</text>",
-        ">2 tagged</text>",
-        ">2 implemented</text>",
-        ">1 missing</text>",
+        ">0 tested on all OSes</text>",
+        ">0 tested on some OSes</text>",
+        ">2 have a test</text>",
+        ">2 built</text>",
+        ">1 not built yet</text>",
     ] {
         assert!(out.contains(text), "{text} in {out}");
     }
-    assert!(out.contains(">1 item · 0.0% covered</text>"), "{out}");
-    assert!(out.contains(">1 n/a or deferred</text>"), "{out}");
+    assert!(
+        out.contains(">1 feature · 0.0% tested on all OSes</text>"),
+        "{out}"
+    );
+    assert!(out.contains(">1 not needed</text>"), "{out}");
 }
 
 #[test]
 fn the_svg_report_lists_the_missing_items_of_each_area() {
     covers(&[ids::report::format::SVG]);
     let out = report(&Repo::valid(), &["--format", "svg"]);
-    assert!(out.contains(">gaps: ours.extra.speed</text>"), "{out}");
+    assert!(
+        out.contains(">not built yet: ours.extra.speed</text>"),
+        "{out}"
+    );
 }
 
 #[test]
@@ -304,7 +313,7 @@ fn the_svg_report_draws_covered_items_solid() {
         "{out}"
     );
     assert!(
-        out.contains("covered: a tagged test passed on Linux, Windows and macOS"),
+        out.contains("Tested on all OSes: a test for it passed on Linux, Windows and macOS"),
         "{out}"
     );
 }
@@ -320,8 +329,8 @@ fn the_svg_report_stacks_passing_items_after_covered_ones() {
 "#;
     let res = ingest_all(&r, JUNIT_PASS, JUNIT_PASS, none);
     let out = report(&r, &["--format", "svg", "--results", &res]);
-    assert!(out.contains(">2 passing on any system</text>"), "{out}");
-    assert!(out.contains(">0 covered on all 3 systems</text>"), "{out}");
+    assert!(out.contains(">2 tested on some OSes</text>"), "{out}");
+    assert!(out.contains(">0 tested on all OSes</text>"), "{out}");
     // The headline counts 3 items: the 2 passing items fill two thirds of the bar, from its start.
     assert!(
         out.contains("<rect x=\"20\" y=\"66\" width=\"507\" height=\"12\" fill=\"#d9862b\""),
@@ -350,9 +359,9 @@ fn the_svg_report_cuts_a_long_area_title_before_the_counts() {
         .and_then(|(_, t)| t.strip_suffix("</text>"))
         .expect("one text element");
     assert!(title.ends_with('…'), "{line}");
-    // 760 px less the counts ("2 items · 0.0% covered", 22 characters at 7.8 px = 172 px) and a 20 px gap leaves
-    // 568 px: 72 characters.
-    assert_eq!(title.chars().count(), 72, "{line}");
+    // 760 px less the counts ("2 features · 0.0% tested on all OSes", 36 characters at 7.8 px = 281 px) and a 20 px
+    // gap leaves 459 px: 58 characters.
+    assert_eq!(title.chars().count(), 58, "{line}");
 }
 
 #[test]
@@ -625,18 +634,22 @@ fn an_area_left_out_of_the_total_keeps_its_own_row_but_not_the_headline() {
     let svg = report(&r, &["--format", "svg"]);
     // The picture keeps every area's row and says in the first row which area it does not count.
     assert!(
-        svg.contains(">All areas · not counting Conditions</text>"),
+        svg.contains(">All areas · Conditions not counted</text>"),
         "{svg}"
     );
     assert!(!svg.contains(">All areas</text>"), "{svg}");
     // Headline (ours: 1 item, the n/a item is not counted), Conditions (2 items), ours.
     assert_eq!(svg.matches("fill=\"#2b2418\"/>").count(), 3, "{svg}");
     assert_eq!(
-        svg.matches(">1 item · 0.0% covered</text>").count(),
+        svg.matches(">1 feature · 0.0% tested on all OSes</text>")
+            .count(),
         2,
         "{svg}"
     );
-    assert!(svg.contains(">2 items · 0.0% covered</text>"), "{svg}");
+    assert!(
+        svg.contains(">2 features · 0.0% tested on all OSes</text>"),
+        "{svg}"
+    );
     let json: serde_json::Value =
         serde_json::from_str(&report(&r, &["--format", "json"])).expect("json");
     // The ratchet still sees every item.
@@ -821,13 +834,13 @@ fn the_svg_report_draws_works_items_and_a_share_bar() {
     let out = report(&with_extents(), &["--format", "svg"]);
     // The works segment and its legend entry, after the missing count it is part of.
     assert!(out.contains("fill=\"#4f6472\" clip-path"), "{out}");
-    assert!(out.contains(">1 missing</text>"), "{out}");
+    assert!(out.contains(">1 not built yet</text>"), "{out}");
     assert!(
         out.contains(">1 of them: works via the old code</text>"),
         "{out}"
     );
     // A missing item that works another way is not a gap.
-    assert!(!out.contains("gaps: ours.extra.speed"), "{out}");
+    assert!(!out.contains("not built yet: ours.extra.speed"), "{out}");
     // A second bar for each area with shares.
     assert!(out.contains(">Conditions · native share</text>"), "{out}");
     assert!(out.contains(">75.0% native on average</text>"), "{out}");
@@ -840,7 +853,7 @@ fn the_svg_report_draws_works_items_and_a_share_bar() {
         "{out}"
     );
     assert!(out.contains(">25.0% neither</text>"), "{out}");
-    assert!(out.contains(">average over 2 items</text>"), "{out}");
+    assert!(out.contains(">average over 2 features</text>"), "{out}");
     // Clip paths stay unique.
     let mut ids: Vec<&str> = out
         .match_indices("clipPath id=\"")
@@ -864,7 +877,7 @@ fn the_markdown_and_terminal_reports_show_works_and_shares() {
     let r = with_extents();
     let md = report(&r, &["--format", "md", "--depth", "3"]);
     assert!(
-        md.contains("| n/a, deferred | Works via the old code |"),
+        md.contains("| Not needed | Works via the old code |"),
         "{md}"
     );
     assert!(
@@ -872,7 +885,7 @@ fn the_markdown_and_terminal_reports_show_works_and_shares() {
         "{md}"
     );
     assert!(
-        md.contains("| Average share | Native | Works via the old code | Items |"),
+        md.contains("| Average share | Native | Works via the old code | Features |"),
         "{md}"
     );
     assert!(
@@ -880,7 +893,7 @@ fn the_markdown_and_terminal_reports_show_works_and_shares() {
         "{md}"
     );
     assert!(
-        md.contains("| missing (works via the old code), 1/4 native |"),
+        md.contains("| not built yet (works via the old code), 1/4 native |"),
         "{md}"
     );
     let term = report(&r, &[]);

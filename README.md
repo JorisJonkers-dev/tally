@@ -13,13 +13,13 @@ both and draws how far along the project is: built, tested, and passing on Linux
 The picture for [loot-rs](https://github.com/JorisJonkers-dev/loot-rs), redrawn on every change to its main branch:
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JorisJonkers-dev/loot-rs/main/docs/coverage/tally.svg" alt="loot-rs feature catalogue: items, tagged, passing and covered per area" width="100%">
+  <img src="https://raw.githubusercontent.com/JorisJonkers-dev/loot-rs/main/docs/coverage/tally.svg" alt="loot-rs features: built, with a test, tested on some OSes and tested on all OSes, per area" width="100%">
 </p>
 
 ## Why it helps
 
 - 📋 **One list of what matters**: every feature, where it comes from, and its state.
-- ✅ **Honest numbers**: a feature counts as covered only when a test for it passed on all three systems.
+- ✅ **Honest numbers**: a feature counts as tested on all OSes only when a test for it passed on Linux, Windows and macOS.
 - 🔒 **No silent drops**: a removed feature or a falling count stops the change until someone says why.
 
 ## Learn more
