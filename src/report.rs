@@ -394,7 +394,10 @@ fn percent(part: usize, total: usize) -> String {
 const FONT: &str = "font-family=\"Consolas, 'Courier New', monospace\"";
 const PANEL: &str = "#14110b";
 const AMBER: &str = "#f2c14e";
-const PALE: &str = "#a77d2a";
+const PASSING: &str = "#d9862b";
+const PALE: &str = "#9c6f2c";
+const BUILT: &str = "#6a5632";
+const GAP: &str = "#a77d2a";
 const TRACK: &str = "#2b2418";
 const EDGE: &str = "#5c4a26";
 const TEXT: &str = "#d9c9a3";
@@ -458,9 +461,41 @@ fn gap_line_of(ids: &[&str]) -> Option<String> {
     Some(line)
 }
 
-/// One panel in the style of the nv-rs progress pictures: a dark panel, a bar per area with covered (solid amber,
-/// passed on Linux, Windows and macOS) over implemented (pale), the counts on the right, a legend under each bar and
-/// the missing items listed. Byte-stable: the same report gives the same bytes.
+/// The first row's title in the picture: "All areas", or which areas it does not count, in a few words.
+fn headline_title(r: &Report, h: &Headline) -> String {
+    if h.left_out.is_empty() {
+        return h.title.clone();
+    }
+    let names: Vec<&str> = h
+        .left_out
+        .iter()
+        .map(|id| {
+            r.areas
+                .iter()
+                .find(|a| &a.id == id)
+                .map_or(id.as_str(), |a| a.title.as_str())
+        })
+        .collect();
+    format!("All areas · not counting {}", names.join(", "))
+}
+
+/// The segments of one bar, from the most done to the least, each with its own count (not the running total):
+/// covered, passing elsewhere, tagged without a pass, implemented without a tag, missing. Gated items are implemented
+/// and never tagged by CI, so they sit in the implemented segment.
+fn segments(c: &Counts) -> [(&'static str, usize); 5] {
+    [
+        (AMBER, c.covered),
+        (PASSING, c.passing.saturating_sub(c.covered)),
+        (PALE, c.tagged.saturating_sub(c.passing)),
+        (BUILT, c.implemented.saturating_sub(c.tagged)),
+        (TRACK, c.missing),
+    ]
+}
+
+/// One panel in the style of the nv-rs progress pictures: a dark panel and, for the headline and every area, one
+/// stacked bar of all its items: covered (a tagged test passed on Linux, Windows and macOS), passing (on at least one
+/// system), tagged (a test names it), implemented without a tag, and missing; the legend under each bar gives the
+/// count of each state, and the missing items are listed. Byte-stable: the same report gives the same bytes.
 fn svg(r: &Report) -> String {
     let mut body = String::new();
     let mut y = 30;
@@ -473,7 +508,7 @@ fn svg(r: &Report) -> String {
     let rows = r
         .headline
         .iter()
-        .map(|h| (h.title.clone(), &h.counts, None))
+        .map(|h| (headline_title(r, h), &h.counts, None))
         .chain(
             r.areas
                 .iter()
@@ -481,19 +516,15 @@ fn svg(r: &Report) -> String {
         );
     for (n, (title, c, gaps)) in rows.enumerate() {
         y += 28;
-        let width = |part: usize| (part * BAR + c.total / 2).checked_div(c.total).unwrap_or(0);
-        let covered = width(c.covered);
-        let implemented = width(c.implemented).max(covered);
-        let not_covered = c.implemented.saturating_sub(c.covered);
         labels.push(format!(
-            "{title} {} of {} implemented, {} covered",
-            c.implemented, c.total, c.covered
+            "{title}: {} items, {} tagged, {} passing, {} covered",
+            c.total, c.tagged, c.passing, c.covered
         ));
         let counts = format!(
-            "{} of {} implemented · {} covered",
-            thousands(c.implemented),
+            "{} {} · {} covered",
             thousands(c.total),
-            thousands(c.covered)
+            if c.total == 1 { "item" } else { "items" },
+            percent(c.covered, c.total)
         );
         // The title ends at least 20 px before the right-aligned counts start.
         let room = BAR.saturating_sub(text_px(counts.chars().count(), CHAR_13) + 20);
@@ -516,54 +547,46 @@ fn svg(r: &Report) -> String {
             body,
             "  <rect x=\"20\" y=\"{bar_y}\" width=\"{BAR}\" height=\"12\" rx=\"4\" fill=\"{TRACK}\"/>"
         );
-        if covered > 0 {
+        // Each segment starts where the running count ends, both rounded the same way, so the segments meet exactly
+        // and the last one ends at the bar's end.
+        let at = |part: usize| (part * BAR + c.total / 2).checked_div(c.total).unwrap_or(0);
+        let mut done = 0;
+        for (colour, count) in segments(c) {
+            let (x0, x1) = (at(done), at(done + count));
+            done += count;
+            if colour == TRACK || x1 <= x0 {
+                continue;
+            }
             let _ = writeln!(
                 body,
-                "  <rect x=\"20\" y=\"{bar_y}\" width=\"{covered}\" height=\"12\" fill=\"{AMBER}\" clip-path=\"url(#c{n})\"/>"
-            );
-        }
-        if implemented > covered {
-            let _ = writeln!(
-                body,
-                "  <rect x=\"{}\" y=\"{bar_y}\" width=\"{}\" height=\"12\" fill=\"{PALE}\" clip-path=\"url(#c{n})\"/>",
-                20 + covered,
-                implemented - covered
+                "  <rect x=\"{}\" y=\"{bar_y}\" width=\"{}\" height=\"12\" fill=\"{colour}\" clip-path=\"url(#c{n})\"/>",
+                20 + x0,
+                x1 - x0
             );
         }
         let _ = writeln!(
             body,
             "  <rect x=\"20\" y=\"{bar_y}\" width=\"{BAR}\" height=\"12\" rx=\"4\" fill=\"none\" stroke=\"{EDGE}\" stroke-width=\"1\"/>"
         );
-        // Legend: covered, implemented without a three-platform pass, missing; then what is left out of the count.
+        // Legend: one swatch per segment with the count of its state, which takes in the states before it (the bar
+        // reads from the left: covered items are also passing, tagged and implemented); missing last. An entry that
+        // does not fit goes to a new line.
         let mut legend_y = bar_y + 28;
         let mut x = 20;
         let entries = [
-            (
-                AMBER,
-                format!(
-                    "{} covered ({})",
-                    thousands(c.covered),
-                    percent(c.covered, c.total)
-                ),
-            ),
-            (
-                PALE,
-                format!(
-                    "{} implemented, not covered ({})",
-                    thousands(not_covered),
-                    percent(not_covered, c.total)
-                ),
-            ),
-            (
-                TRACK,
-                format!(
-                    "{} missing ({})",
-                    thousands(c.missing),
-                    percent(c.missing, c.total)
-                ),
-            ),
+            (AMBER, c.covered, "covered on all 3 systems"),
+            (PASSING, c.passing, "passing on any system"),
+            (PALE, c.tagged, "tagged"),
+            (BUILT, c.implemented, "implemented"),
+            (TRACK, c.missing, "missing"),
         ];
-        for (colour, text) in entries {
+        for (colour, count, name) in entries {
+            let text = format!("{} {name}", thousands(count));
+            let w = 16 + text_px(text.chars().count(), CHAR_11);
+            if x > 20 && x + w > 780 {
+                legend_y += 16;
+                x = 20;
+            }
             let _ = writeln!(
                 body,
                 "  <rect x=\"{x}\" y=\"{}\" width=\"10\" height=\"10\" fill=\"{colour}\" stroke=\"{EDGE}\" stroke-width=\"1\"/>",
@@ -575,7 +598,7 @@ fn svg(r: &Report) -> String {
                 x + 16,
                 xml(&text)
             );
-            x += 16 + text_px(text.chars().count(), CHAR_11) + 20;
+            x += w + 18;
         }
         let left_out = c.not_applicable + c.deferred;
         if left_out > 0 || c.gated > 0 {
@@ -602,7 +625,7 @@ fn svg(r: &Report) -> String {
             y += 16;
             let _ = writeln!(
                 body,
-                "  <text x=\"20\" y=\"{y}\" {FONT} font-size=\"11\" fill=\"{PALE}\">{}</text>",
+                "  <text x=\"20\" y=\"{y}\" {FONT} font-size=\"11\" fill=\"{GAP}\">{}</text>",
                 xml(&g)
             );
         }
@@ -611,7 +634,7 @@ fn svg(r: &Report) -> String {
     let foot = if r.results {
         "covered: a tagged test passed on Linux, Windows and macOS"
     } else {
-        "no test results given: nothing is covered yet"
+        "no test results given: nothing is passing or covered yet"
     };
     let _ = writeln!(
         body,

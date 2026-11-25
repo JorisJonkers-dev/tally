@@ -271,14 +271,18 @@ fn the_svg_report_is_a_dark_panel_with_a_bar_per_area_and_its_counts() {
     assert!(out.contains("DEMO · FEATURE CATALOGUE"), "{out}");
     // One track per row: all areas, Conditions, ours.
     assert_eq!(out.matches("fill=\"#2b2418\"/>").count(), 3, "{out}");
-    assert!(
-        out.contains(">2 of 3 implemented · 0 covered</text>"),
-        "{out}"
-    );
-    assert!(
-        out.contains(">2 implemented, not covered (66.7%)</text>"),
-        "{out}"
-    );
+    assert!(out.contains(">3 items · 0.0% covered</text>"), "{out}");
+    // The legend gives each state's count; each takes in the states before it.
+    for text in [
+        ">0 covered on all 3 systems</text>",
+        ">0 passing on any system</text>",
+        ">2 tagged</text>",
+        ">2 implemented</text>",
+        ">1 missing</text>",
+    ] {
+        assert!(out.contains(text), "{text} in {out}");
+    }
+    assert!(out.contains(">1 item · 0.0% covered</text>"), "{out}");
     assert!(out.contains(">1 n/a or deferred</text>"), "{out}");
 }
 
@@ -306,6 +310,27 @@ fn the_svg_report_draws_covered_items_solid() {
 }
 
 #[test]
+fn the_svg_report_stacks_passing_items_after_covered_ones() {
+    covers(&[ids::report::format::SVG]);
+    let r = Repo::valid();
+    // Linux and Windows pass, macOS ran nothing: both tagged items are passing, none is covered.
+    let none = r#"<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="nextest-run" tests="0" failures="0" errors="0">
+</testsuites>
+"#;
+    let res = ingest_all(&r, JUNIT_PASS, JUNIT_PASS, none);
+    let out = report(&r, &["--format", "svg", "--results", &res]);
+    assert!(out.contains(">2 passing on any system</text>"), "{out}");
+    assert!(out.contains(">0 covered on all 3 systems</text>"), "{out}");
+    // The headline counts 3 items: the 2 passing items fill two thirds of the bar, from its start.
+    assert!(
+        out.contains("<rect x=\"20\" y=\"66\" width=\"507\" height=\"12\" fill=\"#d9862b\""),
+        "{out}"
+    );
+    assert!(!out.contains("height=\"12\" fill=\"#f2c14e\""), "{out}");
+}
+
+#[test]
 fn the_svg_report_cuts_a_long_area_title_before_the_counts() {
     covers(&[ids::report::format::SVG]);
     let r = Repo::valid();
@@ -325,8 +350,9 @@ fn the_svg_report_cuts_a_long_area_title_before_the_counts() {
         .and_then(|(_, t)| t.strip_suffix("</text>"))
         .expect("one text element");
     assert!(title.ends_with('…'), "{line}");
-    // 760 px less the counts (30 characters at 7.8 px = 234 px) and a 20 px gap leaves 506 px: 64 characters.
-    assert_eq!(title.chars().count(), 64, "{line}");
+    // 760 px less the counts ("2 items · 0.0% covered", 22 characters at 7.8 px = 172 px) and a 20 px gap leaves
+    // 568 px: 72 characters.
+    assert_eq!(title.chars().count(), 72, "{line}");
 }
 
 #[test]
@@ -597,20 +623,20 @@ fn an_area_left_out_of_the_total_keeps_its_own_row_but_not_the_headline() {
     );
     assert_eq!(r.check(&[]).0, 0, "{}", r.check(&[]).1);
     let svg = report(&r, &["--format", "svg"]);
-    assert!(svg.contains(">All areas except Conditions</text>"), "{svg}");
+    // The picture keeps every area's row and says in the first row which area it does not count.
+    assert!(
+        svg.contains(">All areas · not counting Conditions</text>"),
+        "{svg}"
+    );
     assert!(!svg.contains(">All areas</text>"), "{svg}");
-    // Headline (ours: 0 of 1, the n/a item is not counted), Conditions (2 of 2), ours.
+    // Headline (ours: 1 item, the n/a item is not counted), Conditions (2 items), ours.
     assert_eq!(svg.matches("fill=\"#2b2418\"/>").count(), 3, "{svg}");
     assert_eq!(
-        svg.matches(">0 of 1 implemented · 0 covered</text>")
-            .count(),
+        svg.matches(">1 item · 0.0% covered</text>").count(),
         2,
         "{svg}"
     );
-    assert!(
-        svg.contains(">2 of 2 implemented · 0 covered</text>"),
-        "{svg}"
-    );
+    assert!(svg.contains(">2 items · 0.0% covered</text>"), "{svg}");
     let json: serde_json::Value =
         serde_json::from_str(&report(&r, &["--format", "json"])).expect("json");
     // The ratchet still sees every item.
