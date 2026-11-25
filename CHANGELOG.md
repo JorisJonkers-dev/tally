@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/JorisJonkers-dev/tally/compare/v0.7.0...v0.8.0) (2026-11-25)
+
+
+### Features
+
+* **report:** plain words in the picture and the Markdown report ([#23](https://github.com/JorisJonkers-dev/tally/issues/23)) ([f842f24](https://github.com/JorisJonkers-dev/tally/commit/f842f2425b9a3b01a27b747b636c402100ba55da))
+
 ## [0.7.0](https://github.com/JorisJonkers-dev/tally/compare/v0.6.0...v0.7.0) (2026-11-25)
 
 
