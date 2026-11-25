@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/JorisJonkers-dev/tally/compare/v0.4.0...v0.5.0) (2026-11-25)
+
+
+### Features
+
+* **report:** leave large areas out of the first row, or hide it ([#17](https://github.com/JorisJonkers-dev/tally/issues/17)) ([a290850](https://github.com/JorisJonkers-dev/tally/commit/a2908508404a372f065a07f2d842bb13a51487f6))
+
 ## [0.4.0](https://github.com/JorisJonkers-dev/tally/compare/v0.3.0...v0.4.0) (2026-11-24)
 
 
