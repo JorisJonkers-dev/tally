@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/JorisJonkers-dev/tally/compare/v0.6.0...v0.7.0) (2026-11-25)
+
+
+### Features
+
+* **report:** count items that work another way and draw an area's average share as a second bar ([#21](https://github.com/JorisJonkers-dev/tally/issues/21)) ([ac380d9](https://github.com/JorisJonkers-dev/tally/commit/ac380d9d8f097c51af3b275f1e1c5b4ea4cbce4a))
+
 ## [0.6.0](https://github.com/JorisJonkers-dev/tally/compare/v0.5.0...v0.6.0) (2026-11-25)
 
 
