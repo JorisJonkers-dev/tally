@@ -10,6 +10,8 @@ fn ev(groups: &[&str]) -> Evidence {
         status_column: None,
         implemented: Vec::new(),
         groups: groups.iter().map(ToString::to_string).collect(),
+        works: Vec::new(),
+        share_column: None,
     }
 }
 

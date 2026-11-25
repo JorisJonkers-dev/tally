@@ -196,7 +196,8 @@ fn cmd_report(mut a: Args, out: &mut dyn Write) -> Result<i32, String> {
         depth: if format == Format::Svg { 3 } else { depth },
         ..o.clone()
     };
-    let r = report::build(&cat, &sc.sites, results.as_ref(), &build);
+    let extents = report::extents(&cat)?;
+    let r = report::build(&cat, &sc.sites, results.as_ref(), &extents, &build);
     write_out(path.as_deref(), &report::render(&r, &o), out)?;
     Ok(0)
 }

@@ -23,3 +23,8 @@ status = "implemented"
 id = "import"
 title = "A TSV evidence file and the catalogue agree on what is implemented"
 status = "implemented"
+
+[[item]]
+id = "works_share"
+title = "TSV evidence `works` values and `share_column` shares (done/works/total) are read and checked"
+status = "implemented"

@@ -157,6 +157,8 @@ metadata = "Metadata file"   # titles for reports
 [report]
 total = true                       # default; false shows only the per-area rows
 leave_out_of_total = ["engine"]    # areas the first row ("All areas except ...") does not count
+works_label = "works another way" # default; how reports name items that work another way (evidence `works`)
+share_label = "done"               # default; the second bar reads "<share_label> share", "N% <share_label> on average"
 
 [[evidence]]             # an importer whose rows must agree with the declared states
 kind = "tsv"             # tsv, ledger, capabilities or contracts
@@ -164,6 +166,8 @@ path = "data/implemented.tsv"
 key_column = "id"
 status_column = "state"
 implemented = ["done"]
+works = ["fallback"]     # optional, tsv only: missing, but works another way
+share_column = "share"   # optional, tsv only: done/works/total per item
 groups = ["engine.functions"]
 ```
 
@@ -178,6 +182,20 @@ partial but the file does not say so, or the other way round.
 
 - `tsv`: `key_column` (default `id`) holds the full item id. With `status_column`, a row is implemented when its
   value is one of `implemented`; without, every row is.
+  Two optional keys add what the bar alone cannot say:
+  - `works = ["fallback"]`: values of `status_column` that mean the item is not implemented but works another way
+    (through a fallback, or the original program's own code). Such an item stays missing everywhere (bars, totals,
+    the ratchet, the check), and reports also count it as `works`: a grey-blue segment after the implemented ones,
+    a legend entry "N of them <works_label>", a Markdown column, `counts.works` and the item's `works` in the JSON.
+    It is not listed as a gap. A value in both `implemented` and `works` is an error; `works` needs `status_column`.
+  - `share_column = "share"`: a column with each item's share as `done/works/total` in whole units (for example
+    functions): `done` units are done, `works` more work another way, out of `total` (above 0; `done + works` at
+    most `total`; an empty cell is no share). Each group and area with shares gets `share` in the JSON (`items`,
+    and the averages `done` and `works` as fractions, each item counting once whatever its size), a table in the
+    Markdown report, a `share:` line in the terminal report, and in the picture a second bar under the area's bar:
+    the average done share, the share that works another way, and the rest.
+  `report` reads these files too, so they must exist when it runs. Other importers refuse both keys.
+
 - `ledger`: the per-function ledger of nv-rs (`scripts/ledger --tsv <file>`: `address`, `name`, `status`, ...).
   `groups` names exactly one group, the group of the functions; the item of the function at `00401000` is
   `<group>.f00401000` (`f` and eight lower-case hex digits). A function is implemented when its `status` is

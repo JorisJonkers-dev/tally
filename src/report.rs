@@ -3,10 +3,12 @@
 //! Markdown, JSON (`tally-report.v1`) or SVG bars.
 
 use crate::catalogue::{Catalogue, Origin};
+use crate::import::{Extent, Share};
 use crate::results::Results;
 use crate::scan::Site;
 use crate::state::{self, Counts, State};
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 pub const SCHEMA: &str = "tally-report.v1";
@@ -37,6 +39,12 @@ pub struct ItemRow {
     pub state: State,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// Missing, but works another way (evidence `works`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub works: bool,
+    /// The item's share, `done/works/total` (evidence `share_column`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub share: Option<ShareText>,
     pub tests: Vec<String>,
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub platforms: std::collections::BTreeMap<String, bool>,
@@ -48,8 +56,65 @@ pub struct GroupRow {
     pub title: String,
     pub origin: Origin,
     pub counts: Counts,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub share: Option<ShareRow>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub items: Vec<ItemRow>,
+}
+
+/// An item's share as the evidence wrote it.
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+pub struct ShareText {
+    pub done: u64,
+    pub works: u64,
+    pub total: u64,
+}
+
+/// The average share of the items of a group or area that have one: each item counts once, whatever its size.
+/// `done` and `works` are fractions (0 to 1), averaged in millionths so the text is the same everywhere.
+#[derive(Clone, Copy, Debug, Default, Serialize, PartialEq)]
+pub struct ShareRow {
+    /// Items with a share.
+    pub items: usize,
+    pub done: f64,
+    pub works: f64,
+    #[serde(skip)]
+    done_ppm: u64,
+    #[serde(skip)]
+    works_ppm: u64,
+}
+
+impl ShareRow {
+    fn add(&mut self, s: Share) {
+        let ppm = |part: u64| (part * 1_000_000 + s.total / 2) / s.total;
+        self.items += 1;
+        self.done_ppm += ppm(s.done);
+        self.works_ppm += ppm(s.works);
+        self.finish();
+    }
+
+    fn merge(&mut self, o: &ShareRow) {
+        self.items += o.items;
+        self.done_ppm += o.done_ppm;
+        self.works_ppm += o.works_ppm;
+        self.finish();
+    }
+
+    /// The averages in millionths.
+    fn mean_ppm(&self) -> (u64, u64) {
+        let n = self.items as u64;
+        if n == 0 {
+            return (0, 0);
+        }
+        ((self.done_ppm + n / 2) / n, (self.works_ppm + n / 2) / n)
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn finish(&mut self) {
+        let (d, w) = self.mean_ppm();
+        self.done = d as f64 / 1e6;
+        self.works = w as f64 / 1e6;
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -57,6 +122,8 @@ pub struct AreaRow {
     pub id: String,
     pub title: String,
     pub counts: Counts,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub share: Option<ShareRow>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub groups: Vec<GroupRow>,
 }
@@ -83,17 +150,56 @@ pub struct Report {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub headline: Option<Headline>,
     pub areas: Vec<AreaRow>,
+    /// `report.works_label` and `report.share_label`.
+    #[serde(skip)]
+    pub works_label: String,
+    #[serde(skip)]
+    pub share_label: String,
 }
 
-/// Builds the report data. Depth decides how much is kept: areas only, groups, or items too.
+/// What the `tsv` evidence files that set `works` or `share_column` say, by full item id.
+///
+/// # Errors
+/// When such a file cannot be read or is malformed.
+pub fn extents(cat: &Catalogue) -> Result<BTreeMap<String, Extent>, String> {
+    let mut out = BTreeMap::new();
+    for ev in &cat.settings.evidence {
+        if ev.kind != "tsv" || (ev.works.is_empty() && ev.share_column.is_none()) {
+            continue;
+        }
+        let text = std::fs::read_to_string(cat.root.join(&ev.path))
+            .map_err(|e| format!("evidence {}: {e}", ev.path))?;
+        let in_scope = |id: &str| {
+            ev.groups.is_empty() || ev.groups.iter().any(|g| id.starts_with(&format!("{g}.")))
+        };
+        for (id, x) in crate::import::tsv_extents(&text, ev)
+            .map_err(|e| format!("evidence {}: {e}", ev.path))?
+        {
+            if in_scope(&id) {
+                out.insert(id, x);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Builds the report data. Depth decides how much is kept: areas only, groups, or items too. `extents` (from
+/// [`extents`]) marks missing items that work another way and gives items their share.
 #[must_use]
-pub fn build(cat: &Catalogue, sites: &[Site], results: Option<&Results>, o: &Options) -> Report {
+pub fn build(
+    cat: &Catalogue,
+    sites: &[Site],
+    results: Option<&Results>,
+    extents: &BTreeMap<String, Extent>,
+    o: &Options,
+) -> Report {
     let states = state::all(cat, sites, results);
     let mut idx = 0;
     let mut areas: Vec<AreaRow> = Vec::new();
     let mut totals = Counts::default();
     for g in &cat.groups {
         let mut counts = Counts::default();
+        let mut share: Option<ShareRow> = None;
         let mut items = Vec::new();
         for it in &g.items {
             let s = &states[idx];
@@ -102,6 +208,14 @@ pub fn build(cat: &Catalogue, sites: &[Site], results: Option<&Results>, o: &Opt
                 continue;
             }
             counts.add(s.state);
+            let x = extents.get(&it.id).copied().unwrap_or_default();
+            let works = x.works && s.state == State::Missing;
+            if works {
+                counts.works += 1;
+            }
+            if let Some(sh) = x.share.filter(|_| s.state.counted()) {
+                share.get_or_insert_with(ShareRow::default).add(sh);
+            }
             if o.depth >= 3 && (!o.missing || s.state == State::Missing) {
                 items.push(ItemRow {
                     id: it.id.clone(),
@@ -109,6 +223,12 @@ pub fn build(cat: &Catalogue, sites: &[Site], results: Option<&Results>, o: &Opt
                     origin: it.origin,
                     state: s.state,
                     label: it.label.clone(),
+                    works,
+                    share: x.share.map(|v| ShareText {
+                        done: v.done,
+                        works: v.works,
+                        total: v.total,
+                    }),
                     tests: s.tests.iter().map(ToString::to_string).collect(),
                     platforms: s.platforms.clone(),
                 });
@@ -130,17 +250,25 @@ pub fn build(cat: &Catalogue, sites: &[Site], results: Option<&Results>, o: &Opt
                 id: area.clone(),
                 title,
                 counts: Counts::default(),
+                share: None,
                 groups: Vec::new(),
             });
             areas.len() - 1
         });
         add(&mut areas[pos].counts, &counts);
+        if let Some(sh) = &share {
+            areas[pos]
+                .share
+                .get_or_insert_with(ShareRow::default)
+                .merge(sh);
+        }
         if o.depth >= 2 {
             areas[pos].groups.push(GroupRow {
                 id: g.head.id.clone(),
                 title: g.head.title.clone(),
                 origin: g.head.origin,
                 counts,
+                share,
                 items,
             });
         }
@@ -154,6 +282,8 @@ pub fn build(cat: &Catalogue, sites: &[Site], results: Option<&Results>, o: &Opt
         totals,
         headline,
         areas,
+        works_label: cat.settings.report.works_label.clone(),
+        share_label: cat.settings.report.share_label.clone(),
     }
 }
 
@@ -194,6 +324,7 @@ fn sub(from: &mut Counts, c: &Counts) {
     from.gated -= c.gated;
     from.not_applicable -= c.not_applicable;
     from.deferred -= c.deferred;
+    from.works -= c.works;
 }
 
 fn add(to: &mut Counts, c: &Counts) {
@@ -206,6 +337,7 @@ fn add(to: &mut Counts, c: &Counts) {
     to.gated += c.gated;
     to.not_applicable += c.not_applicable;
     to.deferred += c.deferred;
+    to.works += c.works;
 }
 
 fn bar(part: usize, total: usize, width: usize) -> String {
@@ -214,7 +346,12 @@ fn bar(part: usize, total: usize, width: usize) -> String {
 }
 
 fn line(c: &Counts) -> String {
-    format!(
+    let works = if c.works > 0 {
+        format!("  {:>4} works another way", c.works)
+    } else {
+        String::new()
+    };
+    let main = format!(
         "{:>4}/{:<4} implemented [{}]  {:>4} tagged  {:>4} passing  {:>4} covered  {:>4} missing  {:>3} gated  {:>3} n/a+deferred",
         c.implemented,
         c.total,
@@ -225,7 +362,27 @@ fn line(c: &Counts) -> String {
         c.missing,
         c.gated,
         c.not_applicable + c.deferred
+    );
+    main + &works
+}
+
+/// `  share: 2.3% done, 95.1% works another way (172 items)` for a row with a share.
+fn share_line(r: &Report, sh: &ShareRow) -> String {
+    let (d, w) = sh.mean_ppm();
+    format!(
+        "share: {} {} on average, {} {} ({} items)",
+        ppm_percent(d),
+        r.share_label,
+        ppm_percent(w),
+        r.works_label,
+        thousands(sh.items)
     )
+}
+
+/// Millionths as a percentage with one decimal.
+fn ppm_percent(ppm: u64) -> String {
+    let tenths = (ppm + 500) / 1000;
+    format!("{}.{}%", tenths / 10, tenths % 10)
 }
 
 fn term(r: &Report, o: &Options) -> String {
@@ -254,6 +411,9 @@ fn term(r: &Report, o: &Options) -> String {
     }
     for a in &r.areas {
         let _ = writeln!(s, "{:width$}  {}", a.id, line(&a.counts));
+        if let Some(sh) = &a.share {
+            let _ = writeln!(s, "{:width$}  {}", "", share_line(r, sh));
+        }
         for g in &a.groups {
             let _ = writeln!(s, "{:width$}  {}", format!("  {}", g.id), line(&g.counts));
             for it in &g.items {
@@ -285,24 +445,46 @@ fn term_total(h: &Headline) -> String {
     }
 }
 
+/// `s` with its first letter in upper case.
+fn capital(s: &str) -> String {
+    let mut c = s.chars();
+    c.next()
+        .map_or_else(String::new, |f| f.to_uppercase().chain(c).collect())
+}
+
 fn md_escape(s: &str) -> String {
     s.replace('|', "\\|").replace('\n', " ")
 }
 
 fn md(r: &Report, o: &Options) -> String {
     let mut s = String::new();
+    // The column of items that work another way only appears when some do, so other reports stay as they were.
+    let works = r.areas.iter().any(|a| a.counts.works > 0);
+    let (head, rule) = if works {
+        (
+            format!(" {} |", md_escape(&capital(&r.works_label))),
+            " ---: |",
+        )
+    } else {
+        (String::new(), "")
+    };
     let _ = writeln!(
         s,
-        "| | Implemented | Tagged | Passing | Covered | Missing | Gated | n/a, deferred |"
+        "| | Implemented | Tagged | Passing | Covered | Missing | Gated | n/a, deferred |{head}"
     );
     let _ = writeln!(
         s,
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |{rule}"
     );
     let row = |s: &mut String, name: &str, c: &Counts| {
+        let more = if works {
+            format!(" {} |", c.works)
+        } else {
+            String::new()
+        };
         let _ = writeln!(
             s,
-            "| {name} | {}/{} | {} | {} | {} | {} | {} | {} |",
+            "| {name} | {}/{} | {} | {} | {} | {} | {} | {} |{more}",
             c.implemented,
             c.total,
             c.tagged,
@@ -334,6 +516,41 @@ fn md(r: &Report, o: &Options) -> String {
             }
         }
     }
+    let shares: Vec<(String, &ShareRow)> = r
+        .areas
+        .iter()
+        .flat_map(|a| {
+            let groups = a.groups.iter().filter(|_| o.depth >= 2).filter_map(|g| {
+                g.share
+                    .as_ref()
+                    .map(|sh| (format!("{} (`{}`)", md_escape(&g.title), g.id), sh))
+            });
+            a.share
+                .as_ref()
+                .map(|sh| (format!("**{}**", md_escape(&a.title)), sh))
+                .into_iter()
+                .chain(groups)
+        })
+        .collect();
+    if !shares.is_empty() {
+        let _ = writeln!(
+            s,
+            "\n| Average share | {} | {} | Items |",
+            md_escape(&capital(&r.share_label)),
+            md_escape(&capital(&r.works_label))
+        );
+        let _ = writeln!(s, "| --- | ---: | ---: | ---: |");
+        for (name, sh) in shares {
+            let (done, works) = sh.mean_ppm();
+            let _ = writeln!(
+                s,
+                "| {name} | {} | {} | {} |",
+                ppm_percent(done),
+                ppm_percent(works),
+                sh.items
+            );
+        }
+    }
     if o.depth >= 3 {
         for a in &r.areas {
             for g in &a.groups {
@@ -350,12 +567,19 @@ fn md(r: &Report, o: &Options) -> String {
                         .map(|t| format!("`{t}`"))
                         .collect::<Vec<_>>()
                         .join(", ");
+                    let mut state = it.state.as_str().to_string();
+                    if it.works {
+                        let _ = write!(state, " ({})", r.works_label);
+                    }
+                    if let Some(sh) = it.share {
+                        let _ = write!(state, ", {}/{} {}", sh.done, sh.total, r.share_label);
+                    }
                     let _ = writeln!(
                         s,
                         "| {} | `{}` | {} | {} |",
                         md_escape(&it.title),
                         it.id,
-                        it.state.as_str(),
+                        md_escape(&state),
                         tests
                     );
                 }
@@ -397,6 +621,8 @@ const AMBER: &str = "#f2c14e";
 const PASSING: &str = "#d9862b";
 const PALE: &str = "#9c6f2c";
 const BUILT: &str = "#6a5632";
+/// Missing, but works another way: a cool grey-blue, apart from the warm "done" colours.
+const WORKS: &str = "#4f6472";
 const GAP: &str = "#a77d2a";
 const TRACK: &str = "#2b2418";
 const EDGE: &str = "#5c4a26";
@@ -424,13 +650,13 @@ fn fit(text: &str, max: usize) -> String {
     out
 }
 
-/// The ids of the missing items of an area, shortened to fit one line.
+/// The ids of the missing items of an area that do not work another way either, shortened to fit one line.
 fn gap_line(a: &AreaRow) -> Option<String> {
     let ids: Vec<&str> = a
         .groups
         .iter()
         .flat_map(|g| g.items.iter())
-        .filter(|i| i.state == State::Missing)
+        .filter(|i| i.state == State::Missing && !i.works)
         .map(|i| i.id.as_str())
         .collect();
     gap_line_of(&ids)
@@ -480,16 +706,117 @@ fn headline_title(r: &Report, h: &Headline) -> String {
 }
 
 /// The segments of one bar, from the most done to the least, each with its own count (not the running total):
-/// covered, passing elsewhere, tagged without a pass, implemented without a tag, missing. Gated items are implemented
+/// covered, passing elsewhere, tagged without a pass, implemented without a tag, missing but working another way,
+/// missing. Gated items are implemented
 /// and never tagged by CI, so they sit in the implemented segment.
-fn segments(c: &Counts) -> [(&'static str, usize); 5] {
+fn segments(c: &Counts) -> [(&'static str, usize); 6] {
     [
         (AMBER, c.covered),
         (PASSING, c.passing.saturating_sub(c.covered)),
         (PALE, c.tagged.saturating_sub(c.passing)),
         (BUILT, c.implemented.saturating_sub(c.tagged)),
-        (TRACK, c.missing),
+        (WORKS, c.works),
+        (TRACK, c.missing.saturating_sub(c.works)),
     ]
+}
+
+/// The second bar of an area with shares: the average done share (each item counts once) and the average share
+/// that works another way, with its legend. Returns the last line's y.
+fn share_bar(
+    body: &mut String,
+    r: &Report,
+    title: &str,
+    sh: &ShareRow,
+    y: usize,
+    clip: usize,
+    labels: &mut Vec<String>,
+) -> usize {
+    let y = y + 28;
+    let (done, works) = sh.mean_ppm();
+    let neither = 1_000_000u64.saturating_sub(done + works);
+    labels.push(format!(
+        "{title}, average share: {} {}, {} {}",
+        ppm_percent(done),
+        r.share_label,
+        ppm_percent(works),
+        r.works_label
+    ));
+    let counts = format!("{} {} on average", ppm_percent(done), r.share_label);
+    let room = BAR.saturating_sub(text_px(counts.chars().count(), CHAR_13) + 20);
+    let head = format!("{title} · {} share", r.share_label);
+    let _ = writeln!(
+        body,
+        "  <text x=\"20\" y=\"{y}\" {FONT} font-size=\"13\" fill=\"{TEXT}\">{}</text>",
+        xml(&fit(&head, room * 10 / CHAR_13))
+    );
+    let _ = writeln!(
+        body,
+        "  <text x=\"780\" y=\"{y}\" text-anchor=\"end\" {FONT} font-size=\"13\" fill=\"{AMBER}\">{}</text>",
+        xml(&counts)
+    );
+    let bar_y = y + 8;
+    let _ = writeln!(
+        body,
+        "  <clipPath id=\"c{clip}\"><rect x=\"20\" y=\"{bar_y}\" width=\"{BAR}\" height=\"12\" rx=\"4\"/></clipPath>"
+    );
+    let _ = writeln!(
+        body,
+        "  <rect x=\"20\" y=\"{bar_y}\" width=\"{BAR}\" height=\"12\" rx=\"4\" fill=\"{TRACK}\"/>"
+    );
+    #[allow(clippy::cast_possible_truncation)]
+    let at = |ppm: u64| ((ppm * BAR as u64 + 500_000) / 1_000_000) as usize;
+    let (x1, x2) = (at(done), at(done + works));
+    for (x0, x1, colour) in [(0, x1, PASSING), (x1, x2, WORKS)] {
+        if x1 > x0 {
+            let _ = writeln!(
+                body,
+                "  <rect x=\"{}\" y=\"{bar_y}\" width=\"{}\" height=\"12\" fill=\"{colour}\" clip-path=\"url(#c{clip})\"/>",
+                20 + x0,
+                x1 - x0
+            );
+        }
+    }
+    let _ = writeln!(
+        body,
+        "  <rect x=\"20\" y=\"{bar_y}\" width=\"{BAR}\" height=\"12\" rx=\"4\" fill=\"none\" stroke=\"{EDGE}\" stroke-width=\"1\"/>"
+    );
+    let mut legend_y = bar_y + 28;
+    let mut x = 20;
+    let entries = [
+        (PASSING, ppm_percent(done), r.share_label.as_str()),
+        (WORKS, ppm_percent(works), r.works_label.as_str()),
+        (TRACK, ppm_percent(neither), "neither"),
+    ];
+    for (colour, pct, name) in entries {
+        let text = format!("{pct} {name}");
+        let w = 16 + text_px(text.chars().count(), CHAR_11);
+        if x > 20 && x + w > 780 {
+            legend_y += 16;
+            x = 20;
+        }
+        let _ = writeln!(
+            body,
+            "  <rect x=\"{x}\" y=\"{}\" width=\"10\" height=\"10\" fill=\"{colour}\" stroke=\"{EDGE}\" stroke-width=\"1\"/>",
+            legend_y - 9
+        );
+        let _ = writeln!(
+            body,
+            "  <text x=\"{}\" y=\"{legend_y}\" {FONT} font-size=\"11\" fill=\"{TEXT}\">{}</text>",
+            x + 16,
+            xml(&text)
+        );
+        x += w + 18;
+    }
+    let note = format!("average over {} items", thousands(sh.items));
+    if x + text_px(note.chars().count(), CHAR_11) > 780 {
+        legend_y += 16;
+    }
+    let _ = writeln!(
+        body,
+        "  <text x=\"780\" y=\"{legend_y}\" text-anchor=\"end\" {FONT} font-size=\"11\" fill=\"{TEXT}\">{}</text>",
+        xml(&note)
+    );
+    legend_y
 }
 
 /// One panel in the style of the nv-rs progress pictures: a dark panel and, for the headline and every area, one
@@ -508,13 +835,16 @@ fn svg(r: &Report) -> String {
     let rows = r
         .headline
         .iter()
-        .map(|h| (headline_title(r, h), &h.counts, None))
+        .map(|h| (headline_title(r, h), &h.counts, None, None))
         .chain(
             r.areas
                 .iter()
-                .map(|a| (a.title.clone(), &a.counts, gap_line(a))),
+                .map(|a| (a.title.clone(), &a.counts, gap_line(a), a.share.as_ref())),
         );
-    for (n, (title, c, gaps)) in rows.enumerate() {
+    let mut clip = 0;
+    for (title, c, gaps, share) in rows {
+        let bar_id = clip;
+        clip += 1;
         y += 28;
         labels.push(format!(
             "{title}: {} items, {} tagged, {} passing, {} covered",
@@ -541,7 +871,7 @@ fn svg(r: &Report) -> String {
         let bar_y = y + 8;
         let _ = writeln!(
             body,
-            "  <clipPath id=\"c{n}\"><rect x=\"20\" y=\"{bar_y}\" width=\"{BAR}\" height=\"12\" rx=\"4\"/></clipPath>"
+            "  <clipPath id=\"c{bar_id}\"><rect x=\"20\" y=\"{bar_y}\" width=\"{BAR}\" height=\"12\" rx=\"4\"/></clipPath>"
         );
         let _ = writeln!(
             body,
@@ -559,7 +889,7 @@ fn svg(r: &Report) -> String {
             }
             let _ = writeln!(
                 body,
-                "  <rect x=\"{}\" y=\"{bar_y}\" width=\"{}\" height=\"12\" fill=\"{colour}\" clip-path=\"url(#c{n})\"/>",
+                "  <rect x=\"{}\" y=\"{bar_y}\" width=\"{}\" height=\"12\" fill=\"{colour}\" clip-path=\"url(#c{bar_id})\"/>",
                 20 + x0,
                 x1 - x0
             );
@@ -580,7 +910,10 @@ fn svg(r: &Report) -> String {
             (BUILT, c.implemented, "implemented"),
             (TRACK, c.missing, "missing"),
         ];
-        for (colour, count, name) in entries {
+        let works_text = format!("of them {}", r.works_label);
+        let works_entry = [(WORKS, c.works, works_text.as_str())];
+        let works_entry: &[(&str, usize, &str)] = if c.works > 0 { &works_entry } else { &[] };
+        for &(colour, count, name) in entries.iter().chain(works_entry) {
             let text = format!("{} {name}", thousands(count));
             let w = 16 + text_px(text.chars().count(), CHAR_11);
             if x > 20 && x + w > 780 {
@@ -628,6 +961,10 @@ fn svg(r: &Report) -> String {
                 "  <text x=\"20\" y=\"{y}\" {FONT} font-size=\"11\" fill=\"{GAP}\">{}</text>",
                 xml(&g)
             );
+        }
+        if let Some(sh) = share {
+            y = share_bar(&mut body, r, &title, sh, y, clip, &mut labels);
+            clip += 1;
         }
     }
     y += 26;
